@@ -334,7 +334,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         repository.deleteVoucher(voucherId)
                         repository.deleteVoucherItems(voucherId)
                     } else {
-                        val totalAmount = cartList.sumOf { it.product.sellingPrice * it.quantity }
+                        val totalAmount = cartList.sumOf { (if (isPurchaseMode.value) it.product.purchasePrice else it.product.sellingPrice) * it.quantity }
                         val totalItems = cartList.sumOf { it.quantity }
                         
                         val existingVoucher = allVouchers.value.find { it.receiptNo == voucherId }
@@ -429,6 +429,32 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         return false
     }
 
+    fun checkAccessAuthorization(
+        serverStatus: String,
+        localAccount: UserAccount?,
+        currentDeviceId: String
+    ): Boolean {
+        // 1. Status Check: Both server status AND localAccount status must equal "on"
+        val isStatusOn = (serverStatus == "on") && (localAccount?.status == "on")
+
+        // 2. Device ID Check: localAccount must NOT be null, deviceId must NOT be empty/blank, and must strictly match currentDeviceId
+        val isDeviceMatch = localAccount != null &&
+                localAccount.deviceId.isNotBlank() &&
+                localAccount.deviceId == currentDeviceId
+
+        // 3. Return true (allow access) ONLY when ALL conditions above are met. Otherwise, return false.
+        return isStatusOn && isDeviceMatch
+    }
+
+    fun checkAccessAuthorization(
+        serverIsActive: Boolean,
+        localAccount: UserAccount?,
+        currentDeviceId: String
+    ): Boolean {
+        val serverStatus = if (serverIsActive) "on" else "off"
+        return checkAccessAuthorization(serverStatus, localAccount, currentDeviceId)
+    }
+
     suspend fun checkUserActivationStatus(context: android.content.Context, phoneNo: String? = null): Pair<Boolean, String> {
         val targetPhone = phoneNo ?: sharedPrefs.getString("logged_in_phone", null) ?: currentUser.value?.phoneNo ?: registerPhone.value
         val deviceId = getDeviceId(context)
@@ -459,18 +485,61 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                     val responseStr = conn.inputStream.bufferedReader().use { it.readText() }
                     val json = org.json.JSONObject(responseStr)
                     val status = json.optString("status", "off")
-                    if (status == "on") {
-                        if (!targetPhone.isNullOrEmpty()) {
-                            val acc = repository.getAccountByPhone(targetPhone) ?: _currentUser.value
-                            val updatedAcc = acc?.copy(status = "on", deviceId = deviceId) ?: UserAccount(
+                    val userObj = json.optJSONObject("user")
+                    val remoteDeviceId = userObj?.optString("deviceId")?.takeIf { it.isNotBlank() && it != "null" }
+                        ?: userObj?.optString("device_id")?.takeIf { it.isNotBlank() && it != "null" }
+
+                    val serverMsg = json.optString("message", "")
+                    val localAcc = if (!targetPhone.isNullOrEmpty()) repository.getAccountByPhone(targetPhone) else null
+                    val registeredDeviceId = localAcc?.deviceId?.takeIf { it.isNotBlank() } ?: remoteDeviceId
+
+                    val isDeviceMatch = !registeredDeviceId.isNullOrBlank() && registeredDeviceId == deviceId
+                    val isDeviceMismatch = !isDeviceMatch ||
+                            serverMsg.contains("Device", ignoreCase = true) ||
+                            serverMsg.contains("မတူညီ") ||
+                            status == "device_mismatch"
+
+                    if (isDeviceMismatch) {
+                        if (localAcc != null) {
+                            val updatedAcc = localAcc.copy(
+                                status = "device_mismatch",
+                                deviceId = localAcc.deviceId.takeIf { it.isNotBlank() } ?: registeredDeviceId ?: ""
+                            )
+                            repository.insertAccount(updatedAcc)
+                            _currentUser.value = updatedAcc
+                        } else if (!targetPhone.isNullOrEmpty()) {
+                            val newMismatchAcc = UserAccount(
                                 phoneNo = targetPhone,
-                                username = "User",
+                                username = userObj?.optString("username") ?: "User",
                                 businessName = "",
                                 businessType = "",
                                 address = "",
                                 role = "ADMIN",
                                 passwordHash = "",
-                                deviceId = deviceId,
+                                deviceId = registeredDeviceId ?: "",
+                                status = "device_mismatch"
+                            )
+                            repository.insertAccount(newMismatchAcc)
+                            _currentUser.value = newMismatchAcc
+                        }
+                        return@withContext Pair(false, if (serverMsg.isNotEmpty()) serverMsg else "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)")
+                    }
+
+                    if (status == "on") {
+                        if (!targetPhone.isNullOrEmpty()) {
+                            val acc = repository.getAccountByPhone(targetPhone) ?: _currentUser.value
+                            val updatedAcc = acc?.copy(
+                                status = "on",
+                                deviceId = acc.deviceId.takeIf { it.isNotBlank() } ?: registeredDeviceId ?: ""
+                            ) ?: UserAccount(
+                                phoneNo = targetPhone,
+                                username = userObj?.optString("username") ?: "User",
+                                businessName = "",
+                                businessType = "",
+                                address = "",
+                                role = "ADMIN",
+                                passwordHash = "",
+                                deviceId = registeredDeviceId ?: "",
                                 status = "on"
                             )
                             repository.insertAccount(updatedAcc)
@@ -479,14 +548,31 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         Pair(true, "အကောင့် ဖွင့်လှစ်ပြီးပါပြီ (Account Active)")
                     } else {
-                        Pair(false, "အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)")
+                        if (localAcc != null) {
+                            val updatedAcc = localAcc.copy(status = status)
+                            repository.insertAccount(updatedAcc)
+                            _currentUser.value = updatedAcc
+                        }
+                        val msg = if (serverMsg.isNotEmpty()) serverMsg else "အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)"
+                        Pair(false, msg)
                     }
                 } else {
                     Pair(false, "အကောင့် အခြေအနေ စစ်ဆေး၍မရပါ (Status Check Failed)")
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                Pair(false, "အင်တာနက် ချိတ်ဆက်မှု အဆင်မပြေပါ")
+                val localAcc = if (!targetPhone.isNullOrEmpty()) repository.getAccountByPhone(targetPhone) else null
+                if (localAcc != null) {
+                    if (localAcc.deviceId.isNotEmpty() && localAcc.deviceId != deviceId) {
+                        Pair(false, "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)")
+                    } else if (localAcc.status == "on") {
+                        Pair(true, "အကောင့် ဖွင့်လှစ်ပြီးပါပြီ (Offline Active)")
+                    } else {
+                        Pair(false, "အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)")
+                    }
+                } else {
+                    Pair(false, "အင်တာနက် ချိတ်ဆက်မှု အဆင်မပြေပါ")
+                }
             }
         }
     }
@@ -498,6 +584,8 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         val deviceId = getDeviceId(context)
 
         return withContext(Dispatchers.IO) {
+            val localAccCheck = repository.getAccountByPhone(phone)
+
             try {
                 val apiUrl = cloudflareWorkerUrl.value.trim().removeSuffix("/") + "/api/login"
                 val url = java.net.URL(apiUrl)
@@ -528,11 +616,47 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                 val success = json.optBoolean("success", false)
                 val message = json.optString("message", "")
                 val status = json.optString("status", "")
+                val userObj = json.optJSONObject("user")
+
+                val remoteDeviceId = userObj?.optString("deviceId")?.takeIf { it.isNotBlank() && it != "null" }
+                    ?: userObj?.optString("device_id")?.takeIf { it.isNotBlank() && it != "null" }
+
+                val registeredDeviceId = localAccCheck?.deviceId?.takeIf { it.isNotBlank() } ?: remoteDeviceId
+
+                val isDeviceMatch = !registeredDeviceId.isNullOrBlank() && registeredDeviceId == deviceId
+                val isDeviceMismatch = !isDeviceMatch ||
+                        message.contains("Device", ignoreCase = true) ||
+                        message.contains("မတူညီ") ||
+                        status == "device_mismatch"
+
+                if (isDeviceMismatch) {
+                    if (localAccCheck != null) {
+                        val updatedAcc = localAccCheck.copy(
+                            status = "device_mismatch",
+                            deviceId = localAccCheck.deviceId.takeIf { it.isNotBlank() } ?: registeredDeviceId ?: ""
+                        )
+                        repository.insertAccount(updatedAcc)
+                        _currentUser.value = updatedAcc
+                    } else {
+                        val newMismatchAcc = UserAccount(
+                            phoneNo = phone,
+                            username = userObj?.optString("username") ?: "User",
+                            businessName = "",
+                            businessType = "",
+                            address = "",
+                            role = "ADMIN",
+                            passwordHash = pass,
+                            deviceId = registeredDeviceId ?: "",
+                            status = "device_mismatch"
+                        )
+                        repository.insertAccount(newMismatchAcc)
+                        _currentUser.value = newMismatchAcc
+                    }
+                    sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
+                    return@withContext Triple(false, if (message.isNotEmpty()) message else "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)", "device_mismatch")
+                }
 
                 if (success && status == "on") {
-                    val userObj = json.optJSONObject("user")
-                    val localAcc = repository.getAccountByPhone(phone)
-                    
                     val remoteUsername = userObj?.optString("username")?.takeIf { it.isNotEmpty() && it != "null" }
                     val remoteBusinessName = userObj?.optString("businessName")?.takeIf { it.isNotEmpty() && it != "null" }
                     val remoteBusinessType = userObj?.optString("businessType")?.takeIf { it.isNotEmpty() && it != "null" }
@@ -541,13 +665,13 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
 
                     val remoteAccount = UserAccount(
                         phoneNo = phone,
-                        username = remoteUsername ?: localAcc?.username ?: "User",
-                        businessName = remoteBusinessName ?: localAcc?.businessName ?: "",
-                        businessType = remoteBusinessType ?: localAcc?.businessType ?: "",
-                        address = remoteAddress ?: localAcc?.address ?: "",
-                        role = remoteRole ?: localAcc?.role ?: "ADMIN",
+                        username = remoteUsername ?: localAccCheck?.username ?: "User",
+                        businessName = remoteBusinessName ?: localAccCheck?.businessName ?: "",
+                        businessType = remoteBusinessType ?: localAccCheck?.businessType ?: "",
+                        address = remoteAddress ?: localAccCheck?.address ?: "",
+                        role = remoteRole ?: localAccCheck?.role ?: "ADMIN",
                         passwordHash = pass,
-                        deviceId = deviceId,
+                        deviceId = registeredDeviceId ?: "",
                         status = "on"
                     )
                     repository.insertAccount(remoteAccount)
@@ -555,55 +679,26 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                     sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                     Triple(true, "Login Successful", "on")
                 } else {
-                    var localAcc = repository.getAccountByPhone(phone)
-                    val userObj = json.optJSONObject("user")
-                    if (localAcc == null && (status == "off" || status == "pending" || userObj != null)) {
-                        localAcc = UserAccount(
-                            phoneNo = phone,
-                            username = userObj?.optString("username")?.takeIf { it.isNotEmpty() && it != "null" } ?: "User",
-                            businessName = userObj?.optString("businessName")?.takeIf { it.isNotEmpty() && it != "null" } ?: "",
-                            businessType = userObj?.optString("businessType")?.takeIf { it.isNotEmpty() && it != "null" } ?: "",
-                            address = userObj?.optString("address")?.takeIf { it.isNotEmpty() && it != "null" } ?: "",
-                            role = userObj?.optString("role")?.takeIf { it.isNotEmpty() && it != "null" } ?: "ADMIN",
-                            passwordHash = pass,
-                            deviceId = deviceId,
-                            status = if (status.isNotEmpty()) status else "off"
-                        )
-                        repository.insertAccount(localAcc)
-                    }
-
-                    if (localAcc != null) {
-                        if (localAcc.passwordHash == pass) {
-                            val finalStatus = if (status == "on") "on" else localAcc.status
-                            val updatedAcc = localAcc.copy(status = finalStatus, deviceId = deviceId)
-                            repository.insertAccount(updatedAcc)
-                            _currentUser.value = updatedAcc
-                            sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
-                            
-                            if (finalStatus == "on") {
-                                Triple(true, "Login Successful", "on")
-                            } else {
-                                Triple(false, if (message.isNotEmpty()) message else "အကောင့် မဖွင့်ရသေးပါ", "pending")
-                            }
-                        } else {
-                            Triple(false, if (message.isNotEmpty()) message else "စကားဝှက် မှားယွင်းနေပါသည်", "invalid_password")
-                        }
-                    } else {
-                        val errMsg = if (message.isNotEmpty()) message else "ဖုန်းနံပါတ် သို့မဟုတ် အကောင့် မရှိသေးပါ (Account not found)"
-                        Triple(false, errMsg, if (status == "pending" || status == "off") status else "not_found")
-                    }
+                    val finalMsg = if (message.isNotEmpty()) message else if (status == "pending" || status == "off") "အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)" else "ဖုန်းနံပါတ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်"
+                    val finalStatus = if (status.isNotEmpty()) status else "failed"
+                    Triple(false, finalMsg, finalStatus)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                // Offline fallback
                 val localAcc = repository.getAccountByPhone(phone)
                 if (localAcc != null) {
+                    val isDeviceMatch = localAcc.deviceId.isNotBlank() && localAcc.deviceId == deviceId
+                    if (!isDeviceMatch) {
+                        sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
+                        return@withContext Triple(false, "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)", "device_mismatch")
+                    }
                     if (localAcc.passwordHash == pass) {
                         if (localAcc.status == "on") {
                             _currentUser.value = localAcc
                             sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                             Triple(true, "Offline Login Successful", "on")
                         } else {
-                            _currentUser.value = localAcc
                             sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                             Triple(false, "အကောင့် မဖွင့်ရသေးပါ (Pending Activation)", "pending")
                         }
@@ -748,6 +843,32 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     Pair(false, "အင်တာနက် ချိတ်ဆက်မှု အဆင်မပြေပါ")
                 }
+            }
+        }
+    }
+
+    suspend fun updatePasswordDirectly(phone: String, newPass: String): Pair<Boolean, String> {
+        return withContext(Dispatchers.IO) {
+            val localAcc = repository.getAccountByPhone(phone)
+            val oldPass = localAcc?.passwordHash ?: ""
+            if (oldPass.isNotEmpty()) {
+                val res = changePassword(phone, oldPass, newPass)
+                if (res.first) return@withContext res
+            }
+            try {
+                if (localAcc != null) {
+                    val updated = localAcc.copy(passwordHash = newPass)
+                    repository.insertAccount(updated)
+                    if (_currentUser.value?.phoneNo == phone) {
+                        _currentUser.value = updated
+                    }
+                    Pair(true, "စကားဝှက် ပြောင်းလဲပြီးပါပြီ")
+                } else {
+                    Pair(false, "အကောင့် ရှာမတွေ့ပါ")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Pair(false, e.message ?: "စကားဝှက် ပြောင်းလဲ၍ မရပါ")
             }
         }
     }
@@ -1119,7 +1240,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         isSavingCompletion = true
         
         viewModelScope.launch {
-            val totalAmount = customTotalAmount ?: items.sumOf { it.product.sellingPrice * it.quantity }
+            val totalAmount = customTotalAmount ?: items.sumOf { (if (isPurchaseMode.value) it.product.purchasePrice else it.product.sellingPrice) * it.quantity }
             val totalItems = items.sumOf { it.quantity }
             
             val voucher = Voucher(
@@ -1244,6 +1365,37 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
             val oldItem = current[index]
             current[index] = oldItem.copy(product = oldItem.product.copy(sellingPrice = newPrice))
             _cart.value = current
+        }
+    }
+
+    fun updateCartItemNameByIndex(index: Int, newName: String) {
+        val current = _cart.value.toMutableList()
+        if (index >= 0 && index < current.size) {
+            val oldItem = current[index]
+            current[index] = oldItem.copy(product = oldItem.product.copy(name = newName))
+            _cart.value = current
+        }
+    }
+
+    fun updateCartItemPurchasePriceByIndex(index: Int, newPurchasePrice: Double) {
+        val current = _cart.value.toMutableList()
+        if (index >= 0 && index < current.size) {
+            val oldItem = current[index]
+            current[index] = oldItem.copy(product = oldItem.product.copy(purchasePrice = newPurchasePrice))
+            _cart.value = current
+        }
+    }
+
+    fun updateProductPricesInDb(productId: Long, newPurchasePrice: Double, newSellingPrice: Double) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = repository.getProductDirect(productId)
+            if (existing != null) {
+                val updated = existing.copy(
+                    purchasePrice = newPurchasePrice,
+                    sellingPrice = newSellingPrice
+                )
+                repository.updateProduct(updated)
+            }
         }
     }
 

@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -53,6 +54,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -68,6 +71,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.navigation.NavController
 import com.example.data.*
 import com.example.viewmodel.POSViewModel
@@ -128,41 +134,56 @@ fun SplashScreen(navController: NavController, viewModel: POSViewModel) {
 
     fun checkAndProceed() {
         scope.launch {
-            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-            val lastCheckedDate = sharedPrefs.getString("last_checked_date", "")
+            val loggedPhone = sharedPrefs.getString("logged_in_phone", "")
 
-            if (lastCheckedDate == todayStr && isLoggedIn) {
-                // Already verified today - skip internet & server check for today
+            if (!isLoggedIn || loggedPhone.isNullOrEmpty()) {
                 kotlinx.coroutines.delay(800)
-                val loggedPhone = sharedPrefs.getString("logged_in_phone", "")
-                val localAccount = if (!loggedPhone.isNullOrEmpty()) viewModel.getLocalAccountByPhone(loggedPhone) else null
-                val destination = if (localAccount?.status == "on") "dashboard" else "waiting_activation"
-                navController.navigate(destination) {
+                navController.navigate("login") {
                     popUpTo("splash") { inclusive = true }
                 }
-            } else {
-                // Daily check required
-                if (!viewModel.isInternetAvailable(context)) {
-                    showNoInternetDialog = true
+                return@launch
+            }
+
+            if (!viewModel.isInternetAvailable(context)) {
+                val localAccount = viewModel.getLocalAccountByPhone(loggedPhone)
+                val currentDeviceId = viewModel.getDeviceId(context)
+                val isAccessAllowed = viewModel.checkAccessAuthorization(
+                    serverStatus = localAccount?.status ?: "off",
+                    localAccount = localAccount,
+                    currentDeviceId = currentDeviceId
+                )
+
+                if (isAccessAllowed) {
+                    kotlinx.coroutines.delay(800)
+                    navController.navigate("dashboard") {
+                        popUpTo("splash") { inclusive = true }
+                    }
                 } else {
-                    showNoInternetDialog = false
-                    kotlinx.coroutines.delay(1000)
-                    if (isLoggedIn) {
-                        val (isActive, _) = viewModel.checkUserActivationStatus(context)
-                        if (isActive) {
-                            sharedPrefs.edit().putString("last_checked_date", todayStr).apply()
-                            navController.navigate("dashboard") {
-                                popUpTo("splash") { inclusive = true }
-                            }
-                        } else {
-                            navController.navigate("waiting_activation") {
-                                popUpTo("splash") { inclusive = true }
-                            }
-                        }
-                    } else {
-                        navController.navigate("login") {
-                            popUpTo("splash") { inclusive = true }
-                        }
+                    showNoInternetDialog = true
+                }
+            } else {
+                showNoInternetDialog = false
+                kotlinx.coroutines.delay(800)
+                val (isActive, _) = viewModel.checkUserActivationStatus(context, loggedPhone)
+                val localAccount = viewModel.getLocalAccountByPhone(loggedPhone)
+                val currentDeviceId = viewModel.getDeviceId(context)
+
+                // Check authorization using strict status AND deviceId matching
+                val isAccessAllowed = viewModel.checkAccessAuthorization(
+                    serverIsActive = isActive,
+                    localAccount = localAccount,
+                    currentDeviceId = currentDeviceId
+                )
+
+                if (isAccessAllowed) {
+                    val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                    sharedPrefs.edit().putString("last_checked_date", todayStr).apply()
+                    navController.navigate("dashboard") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                } else {
+                    navController.navigate("waiting_activation") {
+                        popUpTo("splash") { inclusive = true }
                     }
                 }
             }
@@ -524,13 +545,22 @@ fun LoginScreen(navController: NavController, viewModel: POSViewModel) {
                         errorMessage = ""
                         val (success, msg, status) = viewModel.login(context, phone, password)
                         isLoading = false
-                        if (success && status == "on") {
+                        val localAccount = viewModel.getLocalAccountByPhone(phone)
+                        val currentDeviceId = viewModel.getDeviceId(context)
+
+                        val isAccessAllowed = viewModel.checkAccessAuthorization(
+                            serverStatus = status,
+                            localAccount = localAccount,
+                            currentDeviceId = currentDeviceId
+                        )
+
+                        if (isAccessAllowed) {
                             val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
                             context.getSharedPreferences("pos_prefs", android.content.Context.MODE_PRIVATE).edit().putString("last_checked_date", todayStr).apply()
                             navController.navigate("dashboard") {
                                 popUpTo("login") { inclusive = true }
                             }
-                        } else if ((status == "pending" || status == "off") && (msg.contains("မဖွင့်ရသေးပါ") || msg.contains("pending", ignoreCase = true) || msg.contains("activation", ignoreCase = true))) {
+                        } else if (status == "device_mismatch" || status == "pending" || status == "off" || !isAccessAllowed || msg.contains("Device", ignoreCase = true) || msg.contains("မတူညီ") || msg.contains("မဖွင့်ရသေးပါ") || msg.contains("pending", ignoreCase = true) || msg.contains("activation", ignoreCase = true)) {
                             context.getSharedPreferences("pos_prefs", android.content.Context.MODE_PRIVATE).edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                             navController.navigate("waiting_activation") {
                                 popUpTo("login") { inclusive = true }
@@ -1192,14 +1222,21 @@ fun WaitingActivationScreen(navController: NavController, viewModel: POSViewMode
                         statusMessage = ""
                         val (isActive, msg) = viewModel.checkUserActivationStatus(context, phoneNo)
                         isChecking = false
-                        if (isActive) {
+                        val localAccount = viewModel.getLocalAccountByPhone(phoneNo)
+                        val currentDeviceId = viewModel.getDeviceId(context)
+                        val isAccessAllowed = viewModel.checkAccessAuthorization(
+                            serverIsActive = isActive,
+                            localAccount = localAccount,
+                            currentDeviceId = currentDeviceId
+                        )
+                        if (isAccessAllowed) {
                             val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
                             sharedPrefs.edit().putString("last_checked_date", todayStr).apply()
                             navController.navigate("dashboard") {
                                 popUpTo("splash") { inclusive = true }
                             }
                         } else {
-                            statusMessage = msg
+                            statusMessage = msg.ifEmpty { "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)" }
                         }
                     }
                 },
@@ -1576,8 +1613,14 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                 DashboardListSection(
                     title = "အစီရင်ခံစာများ",
                     items = listOf(
-                        PosMenuItem("နေ့စဉ်အရောင်းစာရင်း", Icons.Filled.Today, "sales_history"),
-                        PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, "sales_calendar"),
+                        PosMenuItem("နေ့စဉ်အရောင်းစာရင်း", Icons.Filled.Today, action = {
+                            viewModel.isPurchaseHistoryMode.value = false
+                            navController.navigate("sales_history")
+                        }),
+                        PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
+                            viewModel.isPurchaseHistoryMode.value = false
+                            navController.navigate("sales_calendar")
+                        }),
                         PosMenuItem("လအလိုက်အရောင်းစာရင်း", Icons.Filled.CalendarViewMonth, action = {
                             viewModel.isPurchaseHistoryMode.value = false
                             navController.navigate("sales_month_selector")
@@ -1773,6 +1816,15 @@ fun UserProfileScreen(navController: NavController, viewModel: POSViewModel) {
     val allAccounts by viewModel.allAccounts.collectAsState()
     val sharedPrefs = remember { context.getSharedPreferences("pos_prefs", android.content.Context.MODE_PRIVATE) }
 
+    var showChangePasswordScreen by remember { mutableStateOf(false) }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var newPasswordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+    var passwordError by remember { mutableStateOf("") }
+    var isUpdatingPassword by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
     val profile = remember(currentUser, allAccounts) {
         if (currentUser != null && !currentUser?.phoneNo.isNullOrEmpty()) {
             currentUser
@@ -1789,83 +1841,268 @@ fun UserProfileScreen(navController: NavController, viewModel: POSViewModel) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("အကောင့် အချက်အလက်များ", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AppTextColor) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = AppTextColor)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurfaceColor)
-            )
-        },
-        containerColor = LightBg
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = AppSurfaceColor),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(2.dp),
-                modifier = Modifier.fillMaxWidth()
+    if (showChangePasswordScreen) {
+        androidx.activity.compose.BackHandler {
+            if (!isUpdatingPassword) {
+                showChangePasswordScreen = false
+                newPassword = ""
+                confirmPassword = ""
+                passwordError = ""
+            }
+        }
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("စကားဝှက် ပြောင်းလဲရန်", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AppTextColor) },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            if (!isUpdatingPassword) {
+                                showChangePasswordScreen = false
+                                newPassword = ""
+                                confirmPassword = ""
+                                passwordError = ""
+                            }
+                        }) {
+                            Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = AppTextColor)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurfaceColor)
+                )
+            },
+            containerColor = LightBg
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    // profile is derived above
-
-                    @Composable
-                    fun DetailItem(label: String, value: String) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                            Text(text = label, fontSize = 12.sp, color = AppSubTextColor)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(text = value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AppTextColor)
+                    if (passwordError.isNotEmpty()) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                        ) {
+                            Text(
+                                text = passwordError,
+                                color = Color.Red,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(12.dp)
+                            )
                         }
                     }
 
-                    DetailItem(label = "လုပ်ငန်း/ဆိုင်အမည်", value = profile?.businessName?.ifEmpty { "N/A" } ?: "N/A")
-                    HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+                    // New Password
+                    Text("New Password (စကားဝှက်သစ်)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AppTextColor)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = {
+                            newPassword = it
+                            passwordError = ""
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("New Password ရိုက်ထည့်ပါ") },
+                        visualTransformation = if (newPasswordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { newPasswordVisible = !newPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (newPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                    contentDescription = "Toggle password visibility"
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    )
 
-                    DetailItem(label = "လုပ်ငန်း/ဆိုင်အမျိုးအစား", value = profile?.businessType?.ifEmpty { "N/A" } ?: "N/A")
-                    HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    DetailItem(label = "လိပ်စာ", value = profile?.address?.ifEmpty { "N/A" } ?: "N/A")
-                    HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+                    // Confirm Password
+                    Text("Confirm Password (စကားဝှက် အတည်ပြုရန်)", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = AppTextColor)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = confirmPassword,
+                        onValueChange = {
+                            confirmPassword = it
+                            passwordError = ""
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text("Confirm Password ထပ်မံရိုက်ထည့်ပါ") },
+                        visualTransformation = if (confirmPasswordVisible) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (confirmPasswordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                    contentDescription = "Toggle password visibility"
+                                )
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
 
-                    DetailItem(label = "အသုံးပြုသူအမည်", value = profile?.username?.ifEmpty { "N/A" } ?: "N/A")
-                    HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            if (newPassword.isBlank()) {
+                                passwordError = "New Password (စကားဝှက်သစ်) ရိုက်ထည့်ပါ"
+                                return@Button
+                            }
+                            if (confirmPassword.isBlank()) {
+                                passwordError = "Confirm Password (စကားဝှက် အတည်ပြုရန်) ရိုက်ထည့်ပါ"
+                                return@Button
+                            }
+                            if (newPassword != confirmPassword) {
+                                passwordError = "စကားဝှက် နှစ်ခု မတူညီပါ"
+                                return@Button
+                            }
 
-                    DetailItem(label = "အကောင့်အမျိုးအစား", value = profile?.role?.ifEmpty { "ADMIN" } ?: "ADMIN")
-                    HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+                            val userPhone = profile?.phoneNo ?: ""
+                            if (userPhone.isEmpty()) {
+                                passwordError = "ဖုန်းနံပါတ် ရှာမတွေ့ပါ"
+                                return@Button
+                            }
 
-                    DetailItem(label = "ဖုန်းနံပါတ်", value = profile?.phoneNo?.ifEmpty { "N/A" } ?: "N/A")
+                            isUpdatingPassword = true
+                            coroutineScope.launch {
+                                val (success, msg) = viewModel.updatePasswordDirectly(userPhone, newPassword)
+                                isUpdatingPassword = false
+                                if (success) {
+                                    android.widget.Toast.makeText(context, "စကားဝှက် ပြောင်းလဲပြီးပါပြီ", android.widget.Toast.LENGTH_SHORT).show()
+                                    showChangePasswordScreen = false
+                                    newPassword = ""
+                                    confirmPassword = ""
+                                    passwordError = ""
+                                } else {
+                                    passwordError = msg
+                                }
+                            }
+                        },
+                        enabled = !isUpdatingPassword,
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandPurple),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                    ) {
+                        if (isUpdatingPassword) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Confirm (အတည်ပြုမည်)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.White)
+                        }
+                    }
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            Button(
-                onClick = {
-                    viewModel.logout()
-                    navController.navigate("login") {
-                        popUpTo("dashboard") { inclusive = true }
-                    }
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFEBEE)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth().height(48.dp)
+        }
+    } else {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("အကောင့် အချက်အလက်များ", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AppTextColor) },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = AppTextColor)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            passwordError = ""
+                            newPassword = ""
+                            confirmPassword = ""
+                            showChangePasswordScreen = true
+                        }) {
+                            Text(
+                                text = "***",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 22.sp,
+                                color = AppTextColor
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurfaceColor)
+                )
+            },
+            containerColor = LightBg
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(imageVector = Icons.Filled.ExitToApp, contentDescription = "Logout", tint = Color.Red, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Logout (အကောင့်ထွက်မည်)", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = AppSurfaceColor),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp)
+                    ) {
+                        // profile is derived above
+
+                        @Composable
+                        fun DetailItem(label: String, value: String) {
+                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                Text(text = label, fontSize = 12.sp, color = AppSubTextColor)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = value, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = AppTextColor)
+                            }
+                        }
+
+                        DetailItem(label = "လုပ်ငန်း/ဆိုင်အမည်", value = profile?.businessName?.ifEmpty { "N/A" } ?: "N/A")
+                        HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+
+                        DetailItem(label = "လုပ်ငန်း/ဆိုင်အမျိုးအစား", value = profile?.businessType?.ifEmpty { "N/A" } ?: "N/A")
+                        HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+
+                        DetailItem(label = "လိပ်စာ", value = profile?.address?.ifEmpty { "N/A" } ?: "N/A")
+                        HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+
+                        DetailItem(label = "အသုံးပြုသူအမည်", value = profile?.username?.ifEmpty { "N/A" } ?: "N/A")
+                        HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+
+                        DetailItem(label = "အကောင့်အမျိုးအစား", value = profile?.role?.ifEmpty { "ADMIN" } ?: "ADMIN")
+                        HorizontalDivider(color = if (globalIsDarkTheme) Color(0xFF33323B) else Color(0xFFEEEEEE), modifier = Modifier.padding(vertical = 4.dp))
+
+                        DetailItem(label = "ဖုန်းနံပါတ်", value = profile?.phoneNo?.ifEmpty { "N/A" } ?: "N/A")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        viewModel.logout()
+                        navController.navigate("login") {
+                            popUpTo("dashboard") { inclusive = true }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFEBEE)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Icon(imageVector = Icons.Filled.ExitToApp, contentDescription = "Logout", tint = Color.Red, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Logout (အကောင့်ထွက်မည်)", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             }
         }
     }
@@ -2907,10 +3144,10 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -2925,7 +3162,7 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFEDEBF3), shape = RoundedCornerShape(12.dp))
+                            .background(Color.White, shape = RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFE0E0E0), shape = RoundedCornerShape(12.dp))
                             .clickable {
                                 if (groupList.isEmpty()) {
                                     navController.navigate("groups_list_select")
@@ -3018,10 +3255,10 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -3041,10 +3278,10 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -3056,7 +3293,7 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(Color(0xFFEDEBF3), shape = RoundedCornerShape(12.dp))
+                            .background(Color.White, shape = RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFE0E0E0), shape = RoundedCornerShape(12.dp))
                             .clickable { navController.navigate("units_list_select") }
                             .padding(16.dp)
                     ) {
@@ -3094,8 +3331,8 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedTextColor = Color(0xFF1C1B1F),
                                 unfocusedTextColor = Color(0xFF1C1B1F),
-                                focusedContainerColor = Color(0xFFEDEBF3),
-                                unfocusedContainerColor = Color(0xFFEDEBF3),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
                                 focusedBorderColor = Color.Transparent,
                                 unfocusedBorderColor = Color.Transparent
                             ),
@@ -3143,8 +3380,8 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color(0xFF1C1B1F),
                                     unfocusedTextColor = Color(0xFF1C1B1F),
-                                    focusedContainerColor = Color(0xFFEDEBF3),
-                                    unfocusedContainerColor = Color(0xFFEDEBF3),
+                                    focusedContainerColor = Color.White,
+                                    unfocusedContainerColor = Color.White,
                                     focusedBorderColor = Color.Transparent,
                                     unfocusedBorderColor = Color.Transparent
                                 ),
@@ -3166,8 +3403,8 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color(0xFF1C1B1F),
                                     unfocusedTextColor = Color(0xFF1C1B1F),
-                                    focusedContainerColor = Color(0xFFEDEBF3),
-                                    unfocusedContainerColor = Color(0xFFEDEBF3),
+                                    focusedContainerColor = Color.White,
+                                    unfocusedContainerColor = Color.White,
                                     focusedBorderColor = Color.Transparent,
                                     unfocusedBorderColor = Color.Transparent
                                 ),
@@ -3189,8 +3426,8 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color(0xFF1C1B1F),
                                     unfocusedTextColor = Color(0xFF1C1B1F),
-                                    focusedContainerColor = Color(0xFFEDEBF3),
-                                    unfocusedContainerColor = Color(0xFFEDEBF3),
+                                    focusedContainerColor = Color.White,
+                                    unfocusedContainerColor = Color.White,
                                     focusedBorderColor = Color.Transparent,
                                     unfocusedBorderColor = Color.Transparent
                                 ),
@@ -3345,8 +3582,8 @@ fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = AppTextColor,
                     unfocusedTextColor = AppTextColor,
-                    focusedContainerColor = Color(0xFFEDEBF3),
-                    unfocusedContainerColor = Color(0xFFEDEBF3),
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
                     focusedBorderColor = Color.Transparent,
                     unfocusedBorderColor = Color.Transparent
                 ),
@@ -3660,8 +3897,8 @@ fun UnitsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = AppTextColor,
                     unfocusedTextColor = AppTextColor,
-                    focusedContainerColor = Color(0xFFEDEBF3),
-                    unfocusedContainerColor = Color(0xFFEDEBF3),
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
                     focusedBorderColor = Color.Transparent,
                     unfocusedBorderColor = Color.Transparent
                 ),
@@ -4263,11 +4500,29 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
         }
     }
 
-    val totalAmount = remember(cart) {
-        cart.sumOf { it.product.sellingPrice * it.quantity }
+    val totalAmount = remember(cart, isPurchaseMode) {
+        cart.sumOf { (if (isPurchaseMode) it.product.purchasePrice else it.product.sellingPrice) * it.quantity }
     }
     val totalItems = remember(cart) {
         cart.size
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // showBarcodeScanDialog removed
+    var scannerBuffer by remember { mutableStateOf("") }
+    var lastKeyTime by remember { mutableStateOf(0L) }
+
+    fun processScannedBarcode(code: String): Boolean {
+        val cleanCode = code.trim()
+        if (cleanCode.isEmpty()) return false
+        val matched = products.find { it.barcode.equals(cleanCode, ignoreCase = true) || it.barcode == cleanCode }
+        if (matched != null) {
+            viewModel.addToCart(matched)
+            Toast.makeText(context, "${matched.name} ထည့်ပြီးပါပြီ", Toast.LENGTH_SHORT).show()
+            searchQuery = ""
+            return true
+        }
+        return false
     }
 
     val activeVoucherId by viewModel.activeVoucherId.collectAsState()
@@ -4294,6 +4549,8 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
     var showDeleteItemConfirmDialog by remember { mutableStateOf(false) }
     var editCartItemReturnState by rememberSaveable { mutableStateOf("voucher_detail") }
 
+
+
     var selectedCartItemIndex by remember { mutableStateOf(-1) }
     var isNewCartItemPending by remember { mutableStateOf(false) }
     var tempQty by remember { mutableStateOf(1) }
@@ -4301,13 +4558,29 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
     var byTotalMode by remember { mutableStateOf(false) }
     var selectedGroup by remember { mutableStateOf<String?>("အားလုံး") }
 
-    var showPriceEditDialog by remember { mutableStateOf(false) }
+    var itemEditName by remember(selectedCartItemIndex, cart.getOrNull(selectedCartItemIndex)?.product?.id) {
+        mutableStateOf(cart.getOrNull(selectedCartItemIndex)?.product?.name ?: "")
+    }
+    var itemEditPurchasePrice by remember(selectedCartItemIndex, cart.getOrNull(selectedCartItemIndex)?.product?.id) {
+        mutableStateOf(
+            cart.getOrNull(selectedCartItemIndex)?.product?.purchasePrice?.let {
+                if (it > 0) it.toInt().toString() else "0"
+            } ?: "0"
+        )
+    }
+    var itemEditSellingPrice by remember(selectedCartItemIndex, cart.getOrNull(selectedCartItemIndex)?.product?.id) {
+        mutableStateOf(
+            cart.getOrNull(selectedCartItemIndex)?.product?.sellingPrice?.let {
+                if (it > 0) it.toInt().toString() else "0"
+            } ?: "0"
+        )
+    }
+
     var tempPrice by remember { mutableStateOf("") }
     var tempDiscountAmount by remember { mutableStateOf("") }
     var tempDiscountedPrice by remember { mutableStateOf("") }
 
     var showItemEditDialog by remember { mutableStateOf(false) }
-    var tempEditedPrice by remember { mutableStateOf<Double?>(null) }
     var isSearchExpanded by remember { mutableStateOf(false) }
     var showCategoryRow by remember { mutableStateOf(true) }
     
@@ -4318,8 +4591,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
     var showFeeDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     var showDiscountFeeSheet by remember { mutableStateOf(false) }
-
-    val context = androidx.compose.ui.platform.LocalContext.current
 
     val showDatePicker = {
         val calendar = selectedCalendar.value
@@ -4418,10 +4689,21 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     OutlinedTextField(
                                         value = searchQuery,
                                         onValueChange = { searchQuery = it },
-                                        placeholder = { Text("Search", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Gray) },
+                                        placeholder = { Text("Search / Scan Barcode", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Gray) },
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(52.dp),
+                                            .height(52.dp)
+                                            .onKeyEvent { keyEvent ->
+                                                if (keyEvent.type == KeyEventType.KeyDown && (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
+                                                    if (processScannedBarcode(searchQuery)) {
+                                                        true
+                                                    } else false
+                                                } else false
+                                            },
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                        keyboardActions = KeyboardActions(
+                                            onSearch = { processScannedBarcode(searchQuery) }
+                                        ),
                                         colors = OutlinedTextFieldDefaults.colors(
                                             focusedContainerColor = Color.Transparent,
                                             unfocusedContainerColor = Color.Transparent,
@@ -4431,9 +4713,14 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         singleLine = true,
                                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppTextColor),
                                         trailingIcon = {
-                                            if (searchQuery.isNotEmpty()) {
-                                                IconButton(onClick = { searchQuery = "" }) {
-                                                    Icon(imageVector = Icons.Filled.Close, contentDescription = "Clear", tint = Color.Gray)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (searchQuery.isNotEmpty()) {
+                                                    IconButton(onClick = { searchQuery = "" }) {
+                                                        Icon(imageVector = Icons.Filled.Close, contentDescription = "Clear", tint = Color.Gray)
+                                                    }
+                                                }
+                                                IconButton(onClick = { if (searchQuery.isNotEmpty()) processScannedBarcode(searchQuery) }) {
+                                                    Icon(imageVector = Icons.Filled.CropFree, contentDescription = "Scan", tint = BrandPurple)
                                                 }
                                             }
                                         }
@@ -4458,6 +4745,13 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                             },
                             actions = {
                                 if (!isSearchExpanded) {
+                                    IconButton(onClick = { isSearchExpanded = true }) {
+                                        Icon(
+                                            imageVector = Icons.Filled.CropFree,
+                                            contentDescription = "Scan Barcode",
+                                            tint = Color.DarkGray
+                                        )
+                                    }
                                     IconButton(onClick = { viewModel.isProductGridView.value = !isGridView }) {
                                         Icon(
                                             imageVector = if (isGridView) Icons.Filled.List else Icons.Filled.GridView,
@@ -4607,7 +4901,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                             tempQty = item.quantity
                                                             asDifferentItem = false
                                                             showAdvanced = false
-                                                            tempEditedPrice = null
                                                             isNewCartItemPending = (existingIndex == -1)
                                                             editCartItemReturnState = "select_products"
                                                             screenState = "edit_cart_item"
@@ -4646,7 +4939,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                 )
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 Text(
-                                                    text = "${prod.sellingPrice.toInt()} Ks",
+                                                    text = "${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks",
                                                     fontSize = 12.sp,
                                                     color = Color.Gray
                                                 )
@@ -4701,7 +4994,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                             tempQty = item.quantity
                                                             asDifferentItem = false
                                                             showAdvanced = false
-                                                            tempEditedPrice = null
                                                             isNewCartItemPending = (existingIndex == -1)
                                                             editCartItemReturnState = "select_products"
                                                             screenState = "edit_cart_item"
@@ -4735,7 +5027,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(prod.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AppTextColor)
                                                     Spacer(modifier = Modifier.height(4.dp))
-                                                    Text("${prod.sellingPrice.toInt()} Ks", fontSize = 13.sp, color = Color.Gray)
+                                                    Text("${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks", fontSize = 13.sp, color = Color.Gray)
                                                 }
 
                                                 if (cartQty > 0) {
@@ -4798,18 +5090,35 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                             bottomBar = {
                                 Button(
                                     onClick = {
+                                        val finalName = itemEditName.ifBlank { selectedItem.product.name }
+                                        val finalPurchasePrice = itemEditPurchasePrice.toDoubleOrNull() ?: selectedItem.product.purchasePrice
+                                        val finalSellingPrice = itemEditSellingPrice.toDoubleOrNull() ?: selectedItem.product.sellingPrice
+
                                         if (asDifferentItem && showAdvanced) {
                                             val duplicatedIndex = viewModel.duplicateCartItem(selectedCartItemIndex)
                                             viewModel.updateCartItemQuantityByIndex(duplicatedIndex, tempQty)
-                                            if (tempEditedPrice != null) {
-                                                viewModel.updateCartItemPriceByIndex(duplicatedIndex, tempEditedPrice!!)
+                                            viewModel.updateCartItemNameByIndex(duplicatedIndex, finalName)
+                                            if (isPurchaseMode) {
+                                                viewModel.updateCartItemPurchasePriceByIndex(duplicatedIndex, finalPurchasePrice)
                                             }
+                                            viewModel.updateCartItemPriceByIndex(duplicatedIndex, finalSellingPrice)
                                         } else {
                                             viewModel.updateCartItemQuantityByIndex(selectedCartItemIndex, tempQty)
-                                            if (tempEditedPrice != null) {
-                                                viewModel.updateCartItemPriceByIndex(selectedCartItemIndex, tempEditedPrice!!)
+                                            viewModel.updateCartItemNameByIndex(selectedCartItemIndex, finalName)
+                                            if (isPurchaseMode) {
+                                                viewModel.updateCartItemPurchasePriceByIndex(selectedCartItemIndex, finalPurchasePrice)
                                             }
+                                            viewModel.updateCartItemPriceByIndex(selectedCartItemIndex, finalSellingPrice)
                                         }
+
+                                        if (isPurchaseMode) {
+                                            viewModel.updateProductPricesInDb(
+                                                productId = selectedItem.product.id,
+                                                newPurchasePrice = finalPurchasePrice,
+                                                newSellingPrice = finalSellingPrice
+                                            )
+                                        }
+
                                         isNewCartItemPending = false
                                         selectedCartItemIndex = -1
                                         screenState = editCartItemReturnState
@@ -4878,7 +5187,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     )
                                 }
 
-                                // Advanced Options Card (Visible only if "ပို၍" is ON)
                                 if (showAdvanced) {
                                     Card(
                                         modifier = Modifier
@@ -4909,8 +5217,46 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("ကုန်စည်အမည်", fontSize = 14.sp, color = Color.Gray)
-                                                Text(selectedItem.product.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
+                                                Text("ကုန်စည်အမည်", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.weight(1f))
+                                                BasicTextField(
+                                                    value = itemEditName,
+                                                    onValueChange = { itemEditName = it },
+                                                    textStyle = TextStyle(
+                                                        fontSize = 15.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = BrandPurple,
+                                                        textAlign = TextAlign.End
+                                                    ),
+                                                    singleLine = true,
+                                                    modifier = Modifier.weight(1.5f),
+                                                    cursorBrush = SolidColor(BrandPurple)
+                                                )
+                                            }
+
+                                            if (isPurchaseMode) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text("ဝယ်ဈေး", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.weight(1f))
+                                                    BasicTextField(
+                                                        value = itemEditPurchasePrice,
+                                                        onValueChange = { newValue ->
+                                                            itemEditPurchasePrice = newValue.filter { it.isDigit() || it == '.' }
+                                                        },
+                                                        textStyle = TextStyle(
+                                                            fontSize = 15.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color.DarkGray,
+                                                            textAlign = TextAlign.End
+                                                        ),
+                                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                        singleLine = true,
+                                                        modifier = Modifier.weight(1.5f),
+                                                        cursorBrush = SolidColor(BrandPurple)
+                                                    )
+                                                }
                                             }
 
                                             Row(
@@ -4918,24 +5264,23 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("ရောင်းဈေး", fontSize = 14.sp, color = Color.Gray)
-                                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                                    val displayPrice = tempEditedPrice ?: selectedItem.product.sellingPrice
-                                                    Text("${displayPrice.toInt()}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    IconButton(
-                                                        onClick = {
-                                                            val currentPrice = tempEditedPrice ?: selectedItem.product.sellingPrice
-                                                            tempPrice = currentPrice.toInt().toString()
-                                                            tempDiscountAmount = "0"
-                                                            tempDiscountedPrice = currentPrice.toInt().toString()
-                                                            showPriceEditDialog = true
-                                                        },
-                                                        modifier = Modifier.size(24.dp)
-                                                    ) {
-                                                        Icon(imageVector = Icons.Filled.Edit, contentDescription = "Edit Price", tint = BrandPurple, modifier = Modifier.size(16.dp))
-                                                    }
-                                                }
+                                                Text("ရောင်းဈေး", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.weight(1f))
+                                                BasicTextField(
+                                                    value = itemEditSellingPrice,
+                                                    onValueChange = { newValue ->
+                                                        itemEditSellingPrice = newValue.filter { it.isDigit() || it == '.' }
+                                                    },
+                                                    textStyle = TextStyle(
+                                                        fontSize = 15.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.DarkGray,
+                                                        textAlign = TextAlign.End
+                                                    ),
+                                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                    singleLine = true,
+                                                    modifier = Modifier.weight(1.5f),
+                                                    cursorBrush = SolidColor(BrandPurple)
+                                                )
                                             }
                                         }
                                     }
@@ -4948,11 +5293,11 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text("အရေအတွက်", fontSize = 14.sp, color = Color.Gray)
-                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Spacer(modifier = Modifier.height(12.dp))
+
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center,
-                                        modifier = Modifier.fillMaxWidth()
+                                        horizontalArrangement = Arrangement.Center
                                     ) {
                                         IconButton(
                                             onClick = {
@@ -5031,23 +5376,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(24.dp))
 
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { byTotalMode = !byTotalMode }
-                                        .padding(vertical = 8.dp)
-                                ) {
-                                    Checkbox(
-                                        checked = byTotalMode,
-                                        onCheckedChange = { byTotalMode = it },
-                                        colors = CheckboxDefaults.colors(checkedColor = BrandPurple)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("BY TOTAL", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.DarkGray)
-                                }
                             }
                         }
                     }
@@ -5638,15 +5967,52 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 shape = RoundedCornerShape(12.dp),
                                 elevation = CardDefaults.cardElevation(1.dp)
                             ) {
-                                Row(
+                                var inlineBarcode by remember { mutableStateOf("") }
+                                OutlinedTextField(
+                                    value = inlineBarcode,
+                                    onValueChange = { inlineBarcode = it },
+                                    placeholder = { Text("ဘားကုဒ် ရိုက်ထည့်ပါ / ဖတ်ပါ", fontSize = 14.sp, color = Color.Gray) },
+                                    leadingIcon = {
+                                        Icon(imageVector = Icons.Filled.CropFree, contentDescription = "Scan", tint = BrandPurple)
+                                    },
+                                    trailingIcon = {
+                                        if (inlineBarcode.isNotEmpty()) {
+                                            IconButton(onClick = {
+                                                if (processScannedBarcode(inlineBarcode)) {
+                                                    inlineBarcode = ""
+                                                }
+                                            }) {
+                                                Icon(imageVector = Icons.Filled.ArrowForward, contentDescription = "Enter", tint = BrandPurple)
+                                            }
+                                        }
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("ဘားကုဒ်", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray, modifier = Modifier.weight(1f))
-                                    Icon(imageVector = Icons.Filled.CropFree, contentDescription = "Scan", tint = Color.Gray)
-                                }
+                                        .padding(8.dp)
+                                        .onKeyEvent { keyEvent ->
+                                            if (keyEvent.type == KeyEventType.KeyDown && (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
+                                                if (processScannedBarcode(inlineBarcode)) {
+                                                    inlineBarcode = ""
+                                                }
+                                                true
+                                            } else false
+                                        },
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(
+                                        onDone = {
+                                            if (processScannedBarcode(inlineBarcode)) {
+                                                inlineBarcode = ""
+                                            }
+                                        }
+                                    ),
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = BrandPurple,
+                                        unfocusedBorderColor = Color(0xFFE0E0E0),
+                                        focusedContainerColor = Color.White,
+                                        unfocusedContainerColor = Color.White
+                                    )
+                                )
                             }
 
                             Row(
@@ -5680,7 +6046,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             tempQty = item.quantity
                                             asDifferentItem = false
                                             showAdvanced = false
-                                            tempEditedPrice = null
                                             screenState = "edit_cart_item"
                                         }
                                         .padding(horizontal = 12.dp, vertical = 12.dp),
@@ -5697,14 +6062,14 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         Text(item.product.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.DarkGray)
                                     }
                                     Text(
-                                        text = "${item.product.sellingPrice.toInt()} Ks x${item.quantity}",
+                                        text = "${(if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice).toInt()} Ks x${item.quantity}",
                                         fontSize = 13.sp,
                                         color = Color.Gray,
                                         modifier = Modifier.weight(1.2f),
                                         textAlign = TextAlign.Center
                                     )
                                     Text(
-                                        text = "${(item.product.sellingPrice * item.quantity).toInt()} Ks",
+                                        text = "${((if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice) * item.quantity).toInt()} Ks",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         color = Color.DarkGray,
@@ -6346,7 +6711,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                         tempQty = item.quantity
                                                         asDifferentItem = false
                                                         showAdvanced = false
-                                                        tempEditedPrice = null
                                                         isNewCartItemPending = (existingIndex == -1)
                                                         editCartItemReturnState = "select_products"
                                                         screenState = "edit_cart_item"
@@ -6385,7 +6749,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                text = "${prod.sellingPrice.toInt()} Ks",
+                                                text = "${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks",
                                                 fontSize = 12.sp,
                                                 color = Color.Gray
                                             )
@@ -6440,7 +6804,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                         tempQty = item.quantity
                                                         asDifferentItem = false
                                                         showAdvanced = false
-                                                        tempEditedPrice = null
                                                         isNewCartItemPending = (existingIndex == -1)
                                                         editCartItemReturnState = "select_products"
                                                         screenState = "edit_cart_item"
@@ -6474,7 +6837,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(prod.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AppTextColor)
                                                 Spacer(modifier = Modifier.height(4.dp))
-                                                Text("${prod.sellingPrice.toInt()} Ks", fontSize = 13.sp, color = Color.Gray)
+                                                Text("${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks", fontSize = 13.sp, color = Color.Gray)
                                             }
 
                                             if (cartQty > 0) {
@@ -6615,15 +6978,52 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         shape = RoundedCornerShape(12.dp),
                         elevation = CardDefaults.cardElevation(1.dp)
                     ) {
-                        Row(
+                        var inlineBarcode by remember { mutableStateOf("") }
+                        OutlinedTextField(
+                            value = inlineBarcode,
+                            onValueChange = { inlineBarcode = it },
+                            placeholder = { Text("ဘားကုဒ် ရိုက်ထည့်ပါ / ဖတ်ပါ", fontSize = 14.sp, color = Color.Gray) },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Filled.CropFree, contentDescription = "Scan", tint = BrandPurple)
+                            },
+                            trailingIcon = {
+                                if (inlineBarcode.isNotEmpty()) {
+                                    IconButton(onClick = {
+                                        if (processScannedBarcode(inlineBarcode)) {
+                                            inlineBarcode = ""
+                                        }
+                                    }) {
+                                        Icon(imageVector = Icons.Filled.ArrowForward, contentDescription = "Enter", tint = BrandPurple)
+                                    }
+                                }
+                            },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("ဘားကုဒ်", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray, modifier = Modifier.weight(1f))
-                            Icon(imageVector = Icons.Filled.CropFree, contentDescription = "Scan", tint = Color.Gray)
-                        }
+                                .padding(8.dp)
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown && (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter)) {
+                                        if (processScannedBarcode(inlineBarcode)) {
+                                            inlineBarcode = ""
+                                        }
+                                        true
+                                    } else false
+                                },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = {
+                                    if (processScannedBarcode(inlineBarcode)) {
+                                        inlineBarcode = ""
+                                    }
+                                }
+                            ),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = BrandPurple,
+                                unfocusedBorderColor = Color(0xFFE0E0E0),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            )
+                        )
                     }
 
                     // Table Header
@@ -6659,7 +7059,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     tempQty = item.quantity
                                     asDifferentItem = false
                                     showAdvanced = false
-                                    tempEditedPrice = null
                                     editCartItemReturnState = "voucher_detail"
                                     screenState = "edit_cart_item"
                                 }
@@ -6678,14 +7077,14 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.DarkGray)
                             }
                             Text(
-                                text = "${item.product.sellingPrice.toInt()} Ks x${item.quantity}",
+                                text = "${(if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice).toInt()} Ks x${item.quantity}",
                                 fontSize = 13.sp,
                                 color = Color.Gray,
                                 modifier = Modifier.weight(1.2f),
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                text = "${(item.product.sellingPrice * item.quantity).toInt()} Ks",
+                                text = "${((if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice) * item.quantity).toInt()} Ks",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color.DarkGray,
@@ -6984,18 +7383,35 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                     bottomBar = {
                         Button(
                             onClick = {
+                                val finalName = itemEditName.ifBlank { selectedItem.product.name }
+                                val finalPurchasePrice = itemEditPurchasePrice.toDoubleOrNull() ?: selectedItem.product.purchasePrice
+                                val finalSellingPrice = itemEditSellingPrice.toDoubleOrNull() ?: selectedItem.product.sellingPrice
+
                                 if (asDifferentItem && showAdvanced) {
                                     val duplicatedIndex = viewModel.duplicateCartItem(selectedCartItemIndex)
                                     viewModel.updateCartItemQuantityByIndex(duplicatedIndex, tempQty)
-                                    if (tempEditedPrice != null) {
-                                        viewModel.updateCartItemPriceByIndex(duplicatedIndex, tempEditedPrice!!)
+                                    viewModel.updateCartItemNameByIndex(duplicatedIndex, finalName)
+                                    if (isPurchaseMode) {
+                                        viewModel.updateCartItemPurchasePriceByIndex(duplicatedIndex, finalPurchasePrice)
                                     }
+                                    viewModel.updateCartItemPriceByIndex(duplicatedIndex, finalSellingPrice)
                                 } else {
                                     viewModel.updateCartItemQuantityByIndex(selectedCartItemIndex, tempQty)
-                                    if (tempEditedPrice != null) {
-                                        viewModel.updateCartItemPriceByIndex(selectedCartItemIndex, tempEditedPrice!!)
+                                    viewModel.updateCartItemNameByIndex(selectedCartItemIndex, finalName)
+                                    if (isPurchaseMode) {
+                                        viewModel.updateCartItemPurchasePriceByIndex(selectedCartItemIndex, finalPurchasePrice)
                                     }
+                                    viewModel.updateCartItemPriceByIndex(selectedCartItemIndex, finalSellingPrice)
                                 }
+
+                                if (isPurchaseMode) {
+                                    viewModel.updateProductPricesInDb(
+                                        productId = selectedItem.product.id,
+                                        newPurchasePrice = finalPurchasePrice,
+                                        newSellingPrice = finalSellingPrice
+                                    )
+                                }
+
                                 isNewCartItemPending = false
                                 selectedCartItemIndex = -1
                                 screenState = editCartItemReturnState
@@ -7063,7 +7479,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                             )
                         }
 
-                        // Advanced Options Card (Visible only if "ပို၍" is ON)
                         if (showAdvanced) {
                             Card(
                                 modifier = Modifier
@@ -7076,7 +7491,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     modifier = Modifier.padding(16.dp),
                                     verticalArrangement = Arrangement.spacedBy(16.dp)
                                 ) {
-                                    // Row 1: As Different Item
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -7090,40 +7504,75 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         )
                                     }
 
-                                    // Row 2: ကုန်စည်အမည်
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("ကုန်စည်အမည်", fontSize = 14.sp, color = Color.Gray)
-                                        Text(selectedItem.product.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
+                                        Text("ကုန်စည်အမည်", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.weight(1f))
+                                        BasicTextField(
+                                            value = itemEditName,
+                                            onValueChange = { itemEditName = it },
+                                            textStyle = TextStyle(
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = BrandPurple,
+                                                textAlign = TextAlign.End
+                                            ),
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1.5f),
+                                            cursorBrush = SolidColor(BrandPurple)
+                                        )
                                     }
 
-                                    // Row 3: ရောင်းဈေး
+                                    if (isPurchaseMode) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("ဝယ်ဈေး", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.weight(1f))
+                                            BasicTextField(
+                                                value = itemEditPurchasePrice,
+                                                onValueChange = { newValue ->
+                                                    itemEditPurchasePrice = newValue.filter { it.isDigit() || it == '.' }
+                                                },
+                                                textStyle = TextStyle(
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.DarkGray,
+                                                    textAlign = TextAlign.End
+                                                ),
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1.5f),
+                                                cursorBrush = SolidColor(BrandPurple)
+                                            )
+                                        }
+                                    }
+
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("ရောင်းဈေး", fontSize = 14.sp, color = Color.Gray)
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            val displayPrice = tempEditedPrice ?: selectedItem.product.sellingPrice
-                                            Text("${displayPrice.toInt()}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            IconButton(
-                                                onClick = {
-                                                    val currentPrice = tempEditedPrice ?: selectedItem.product.sellingPrice
-                                                    tempPrice = currentPrice.toInt().toString()
-                                                    tempDiscountAmount = "0"
-                                                    tempDiscountedPrice = currentPrice.toInt().toString()
-                                                    showPriceEditDialog = true
-                                                },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(imageVector = Icons.Filled.Edit, contentDescription = "Edit Price", tint = BrandPurple, modifier = Modifier.size(16.dp))
-                                            }
-                                        }
+                                        Text("ရောင်းဈေး", fontSize = 14.sp, color = Color.Gray, modifier = Modifier.weight(1f))
+                                        BasicTextField(
+                                            value = itemEditSellingPrice,
+                                            onValueChange = { newValue ->
+                                                itemEditSellingPrice = newValue.filter { it.isDigit() || it == '.' }
+                                            },
+                                            textStyle = TextStyle(
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.DarkGray,
+                                                textAlign = TextAlign.End
+                                            ),
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1.5f),
+                                            cursorBrush = SolidColor(BrandPurple)
+                                        )
                                     }
                                 }
                             }
@@ -7223,21 +7672,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         Spacer(modifier = Modifier.height(24.dp))
                         
                         // BY TOTAL check
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { byTotalMode = !byTotalMode }
-                                .padding(vertical = 8.dp)
-                        ) {
-                            Checkbox(
-                                checked = byTotalMode,
-                                onCheckedChange = { byTotalMode = it },
-                                colors = CheckboxDefaults.colors(checkedColor = BrandPurple)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("BY TOTAL", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.DarkGray)
-                        }
+
                     }
                 }
             }
@@ -8349,103 +8784,6 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                 }
             }
         }
-    }
-
-    if (showPriceEditDialog && selectedCartItemIndex >= 0 && selectedCartItemIndex < cart.size) {
-        val selectedItem = cart[selectedCartItemIndex]
-        val origSellingPrice = products.find { it.id == selectedItem.product.id }?.sellingPrice ?: selectedItem.product.sellingPrice
-        
-        AlertDialog(
-            onDismissRequest = { showPriceEditDialog = false },
-            title = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("ပုံနှိပ်", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = AppTextColor)
-                    Switch(
-                        checked = true,
-                        onCheckedChange = {},
-                        colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = BrandPurple)
-                    )
-                }
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text("ဈေးနှုန်း", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = tempPrice,
-                        onValueChange = { newValue ->
-                            val filtered = newValue.filter { it.isDigit() }
-                            tempPrice = filtered
-                            val priceVal = filtered.toDoubleOrNull() ?: 0.0
-                            val discountVal = tempDiscountAmount.toDoubleOrNull() ?: 0.0
-                            tempDiscountedPrice = (priceVal - discountVal).toInt().toString()
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPurple)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("မူရင်းဈေး: ${origSellingPrice.toInt()} Ks", fontSize = 12.sp, color = Color.Gray)
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Text("လျှော့မည့်ပမာဏ", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = tempDiscountAmount,
-                        onValueChange = { newValue ->
-                            val filtered = newValue.filter { it.isDigit() }
-                            tempDiscountAmount = filtered
-                            val priceVal = tempPrice.toDoubleOrNull() ?: 0.0
-                            val discountVal = filtered.toDoubleOrNull() ?: 0.0
-                            tempDiscountedPrice = (priceVal - discountVal).toInt().toString()
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPurple)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Text("လျှော့ပြီးဈေးနှုန်း", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedTextField(
-                        value = tempDiscountedPrice,
-                        onValueChange = { newValue ->
-                            val filtered = newValue.filter { it.isDigit() }
-                            tempDiscountedPrice = filtered
-                            val priceVal = tempPrice.toDoubleOrNull() ?: 0.0
-                            val discPriceVal = filtered.toDoubleOrNull() ?: 0.0
-                            tempDiscountAmount = (priceVal - discPriceVal).toInt().toString()
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = BrandPurple)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val finalPrice = tempDiscountedPrice.toDoubleOrNull() ?: tempPrice.toDoubleOrNull() ?: selectedItem.product.sellingPrice
-                        tempEditedPrice = finalPrice
-                        showPriceEditDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandPurple),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth().height(48.dp)
-                ) {
-                    Text("Finish", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            shape = RoundedCornerShape(16.dp),
-            containerColor = Color.White
-        )
     }
 }
 
@@ -13442,20 +13780,6 @@ fun CustomersListScreen(navController: NavController, viewModel: POSViewModel) {
                     )
                 )
             }
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    viewModel.editingCustomer.value = null
-                    navController.navigate("add_customer")
-                },
-                containerColor = BrandPurple,
-                contentColor = Color.White,
-                shape = CircleShape,
-                modifier = Modifier.padding(bottom = 32.dp, end = 16.dp)
-            ) {
-                Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Customer")
-            }
         }
     ) { innerPadding ->
         Column(
@@ -13647,10 +13971,10 @@ fun AddCustomerScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -13667,10 +13991,10 @@ fun AddCustomerScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -13688,10 +14012,10 @@ fun AddCustomerScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -13708,10 +14032,10 @@ fun AddCustomerScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -14077,10 +14401,10 @@ fun AddSupplierScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -14097,10 +14421,10 @@ fun AddSupplierScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -14118,10 +14442,10 @@ fun AddSupplierScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -14138,10 +14462,10 @@ fun AddSupplierScreen(navController: NavController, viewModel: POSViewModel) {
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = Color(0xFF1C1B1F),
                             unfocusedTextColor = Color(0xFF1C1B1F),
-                            focusedContainerColor = Color(0xFFEDEBF3),
-                            unfocusedContainerColor = Color(0xFFEDEBF3),
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = BrandPurple,
+                            unfocusedBorderColor = Color(0xFFE0E0E0)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -14432,8 +14756,8 @@ fun PaymentsListScreen(navController: NavController, viewModel: POSViewModel) {
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = AppTextColor,
                         unfocusedTextColor = AppTextColor,
-                        focusedContainerColor = Color(0xFFEDEBF3),
-                        unfocusedContainerColor = Color(0xFFEDEBF3),
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent
                     ),
@@ -14476,8 +14800,8 @@ fun PaymentsListScreen(navController: NavController, viewModel: POSViewModel) {
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = AppTextColor,
                         unfocusedTextColor = AppTextColor,
-                        focusedContainerColor = Color(0xFFEDEBF3),
-                        unfocusedContainerColor = Color(0xFFEDEBF3),
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color.White,
                         focusedBorderColor = Color.Transparent,
                         unfocusedBorderColor = Color.Transparent
                     ),
@@ -19977,5 +20301,4 @@ fun ExpensesListScreen(
         )
     }
 }
-
 
