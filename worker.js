@@ -119,16 +119,23 @@ export default {
         }
 
         if (env.DB) {
-          const user = await env.DB.prepare('SELECT * FROM users WHERE phone_no = ? AND password_hash = ?')
-            .bind(phoneNo, password)
-            .first();
+          const phoneUser = await env.DB.prepare('SELECT * FROM users WHERE phone_no = ?').bind(phoneNo).first();
 
-          if (!user) {
+          if (!phoneUser) {
             return new Response(
-              JSON.stringify({ success: false, message: 'ဖုန်းနံပါတ် သို့မဟုတ် Password မှားယွင်းနေပါသည် (Invalid credentials)' }),
+              JSON.stringify({ success: false, status: 'not_found', message: 'ဤဖုန်းနံပါတ်ဖြင့် register ပြုလုပ်ထားခြင်းမရှိပါ (Phone number is not registered)' }),
+              { status: 404, headers: corsHeaders }
+            );
+          }
+
+          if (phoneUser.password_hash !== password) {
+            return new Response(
+              JSON.stringify({ success: false, status: 'invalid_password', message: 'Password မှားယွင်းနေပါသည် (Incorrect password)' }),
               { status: 401, headers: corsHeaders }
             );
           }
+
+          const user = phoneUser;
 
           // Verify deviceId matching
           if (deviceId && user.device_id && user.device_id !== '' && user.device_id !== deviceId) {

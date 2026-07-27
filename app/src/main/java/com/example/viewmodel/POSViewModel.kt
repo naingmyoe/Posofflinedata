@@ -618,18 +618,28 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                 val status = json.optString("status", "")
                 val userObj = json.optJSONObject("user")
 
-                val remoteDeviceId = userObj?.optString("deviceId")?.takeIf { it.isNotBlank() && it != "null" }
-                    ?: userObj?.optString("device_id")?.takeIf { it.isNotBlank() && it != "null" }
+                // 1. Explicit check for unregistered phone number
+                if (responseCode == 404 || status == "not_found" || message.contains("not registered", ignoreCase = true) || message.contains("not found", ignoreCase = true) || message.contains("register ပြုလုပ်ထားခြင်းမရှိပါ") || message.contains("မရှိပါ")) {
+                    return@withContext Triple(false, "ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ထားခြင်း မရှိပါ (Account not registered)", "not_found")
+                }
 
-                val registeredDeviceId = localAccCheck?.deviceId?.takeIf { it.isNotBlank() } ?: remoteDeviceId
+                // 2. Explicit check for incorrect password
+                if (responseCode == 401 || status == "invalid_password" || message.contains("password", ignoreCase = true) || message.contains("credentials", ignoreCase = true) || message.contains("မှားယွင်း")) {
+                    if (!message.contains("Device", ignoreCase = true) && !message.contains("မတူညီ") && status != "device_mismatch") {
+                        return@withContext Triple(false, "Password မှားယွင်းနေပါသည် (Incorrect password)", "invalid_password")
+                    }
+                }
 
-                val isDeviceMatch = !registeredDeviceId.isNullOrBlank() && registeredDeviceId == deviceId
-                val isDeviceMismatch = !isDeviceMatch ||
+                // 3. Device mismatch check ONLY if status or server message explicitly indicates device mismatch
+                val isDeviceMismatch = status == "device_mismatch" ||
                         message.contains("Device", ignoreCase = true) ||
-                        message.contains("မတူညီ") ||
-                        status == "device_mismatch"
+                        message.contains("မတူညီ")
 
                 if (isDeviceMismatch) {
+                    val remoteDeviceId = userObj?.optString("deviceId")?.takeIf { it.isNotBlank() && it != "null" }
+                        ?: userObj?.optString("device_id")?.takeIf { it.isNotBlank() && it != "null" }
+                    val registeredDeviceId = localAccCheck?.deviceId?.takeIf { it.isNotBlank() } ?: remoteDeviceId
+
                     if (localAccCheck != null) {
                         val updatedAcc = localAccCheck.copy(
                             status = "device_mismatch",
@@ -637,26 +647,21 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         )
                         repository.insertAccount(updatedAcc)
                         _currentUser.value = updatedAcc
-                    } else {
-                        val newMismatchAcc = UserAccount(
-                            phoneNo = phone,
-                            username = userObj?.optString("username") ?: "User",
-                            businessName = "",
-                            businessType = "",
-                            address = "",
-                            role = "ADMIN",
-                            passwordHash = pass,
-                            deviceId = registeredDeviceId ?: "",
-                            status = "device_mismatch"
-                        )
-                        repository.insertAccount(newMismatchAcc)
-                        _currentUser.value = newMismatchAcc
                     }
                     sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                     return@withContext Triple(false, if (message.isNotEmpty()) message else "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)", "device_mismatch")
                 }
 
                 if (success && status == "on") {
+                    val remoteDeviceId = userObj?.optString("deviceId")?.takeIf { it.isNotBlank() && it != "null" }
+                        ?: userObj?.optString("device_id")?.takeIf { it.isNotBlank() && it != "null" }
+                    val registeredDeviceId = localAccCheck?.deviceId?.takeIf { it.isNotBlank() } ?: remoteDeviceId ?: ""
+
+                    // Validate device ID matching for logged in user
+                    if (registeredDeviceId.isNotBlank() && registeredDeviceId != deviceId) {
+                        return@withContext Triple(false, "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)", "device_mismatch")
+                    }
+
                     val remoteUsername = userObj?.optString("username")?.takeIf { it.isNotEmpty() && it != "null" }
                     val remoteBusinessName = userObj?.optString("businessName")?.takeIf { it.isNotEmpty() && it != "null" }
                     val remoteBusinessType = userObj?.optString("businessType")?.takeIf { it.isNotEmpty() && it != "null" }
@@ -671,42 +676,43 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         address = remoteAddress ?: localAccCheck?.address ?: "",
                         role = remoteRole ?: localAccCheck?.role ?: "ADMIN",
                         passwordHash = pass,
-                        deviceId = registeredDeviceId ?: "",
+                        deviceId = registeredDeviceId.ifEmpty { deviceId },
                         status = "on"
                     )
                     repository.insertAccount(remoteAccount)
                     _currentUser.value = remoteAccount
                     sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                     Triple(true, "Login Successful", "on")
+                } else if (status == "off" || status == "pending" || message.contains("စောင့်ဆိုင်း") || message.contains("မဖွင့်ပေးရသေးပါ")) {
+                    sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
+                    Triple(false, if (message.isNotEmpty()) message else "အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)", "pending")
                 } else {
-                    val finalMsg = if (message.isNotEmpty()) message else if (status == "pending" || status == "off") "အကောင့်ကို Admin မှ မဖွင့်ပေးရသေးပါ (Account Pending)" else "ဖုန်းနံပါတ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်"
-                    val finalStatus = if (status.isNotEmpty()) status else "failed"
-                    Triple(false, finalMsg, finalStatus)
+                    val finalMsg = if (message.isNotEmpty()) message else "ဖုန်းနံပါတ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်"
+                    Triple(false, finalMsg, "failed")
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 // Offline fallback
                 val localAcc = repository.getAccountByPhone(phone)
                 if (localAcc != null) {
+                    if (localAcc.passwordHash != pass) {
+                        return@withContext Triple(false, "Password မှားယွင်းနေပါသည် (Incorrect password)", "invalid_password")
+                    }
                     val isDeviceMatch = localAcc.deviceId.isNotBlank() && localAcc.deviceId == deviceId
                     if (!isDeviceMatch) {
                         sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                         return@withContext Triple(false, "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)", "device_mismatch")
                     }
-                    if (localAcc.passwordHash == pass) {
-                        if (localAcc.status == "on") {
-                            _currentUser.value = localAcc
-                            sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
-                            Triple(true, "Offline Login Successful", "on")
-                        } else {
-                            sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
-                            Triple(false, "အကောင့် မဖွင့်ရသေးပါ (Pending Activation)", "pending")
-                        }
+                    if (localAcc.status == "on") {
+                        _currentUser.value = localAcc
+                        sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
+                        Triple(true, "Offline Login Successful", "on")
                     } else {
-                        Triple(false, "စကားဝှက် မှားယွင်းနေပါသည်", "invalid_password")
+                        sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
+                        Triple(false, "အကောင့် မဖွင့်ရသေးပါ (Pending Activation)", "pending")
                     }
                 } else {
-                    Triple(false, "ဖုန်းနံပါတ် သို့မဟုတ် အကောင့် မရှိသေးပါ (Account not found)", "not_found")
+                    Triple(false, "ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ထားခြင်း မရှိပါ (Account not registered)", "not_found")
                 }
             }
         }

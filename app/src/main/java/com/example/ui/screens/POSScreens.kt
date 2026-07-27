@@ -181,8 +181,12 @@ fun SplashScreen(navController: NavController, viewModel: POSViewModel) {
                     navController.navigate("dashboard") {
                         popUpTo("splash") { inclusive = true }
                     }
-                } else {
+                } else if (localAccount != null && (localAccount.status == "off" || localAccount.status == "pending" || localAccount.status == "device_mismatch")) {
                     navController.navigate("waiting_activation") {
+                        popUpTo("splash") { inclusive = true }
+                    }
+                } else {
+                    navController.navigate("login") {
                         popUpTo("splash") { inclusive = true }
                     }
                 }
@@ -554,19 +558,35 @@ fun LoginScreen(navController: NavController, viewModel: POSViewModel) {
                             currentDeviceId = currentDeviceId
                         )
 
-                        if (isAccessAllowed) {
-                            val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
-                            context.getSharedPreferences("pos_prefs", android.content.Context.MODE_PRIVATE).edit().putString("last_checked_date", todayStr).apply()
-                            navController.navigate("dashboard") {
-                                popUpTo("login") { inclusive = true }
+                        if (success && status == "on") {
+                            val localAccount = viewModel.getLocalAccountByPhone(phone)
+                            val currentDeviceId = viewModel.getDeviceId(context)
+
+                            val isAccessAllowed = viewModel.checkAccessAuthorization(
+                                serverStatus = status,
+                                localAccount = localAccount,
+                                currentDeviceId = currentDeviceId
+                            )
+
+                            if (isAccessAllowed) {
+                                val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+                                context.getSharedPreferences("pos_prefs", android.content.Context.MODE_PRIVATE).edit().putString("last_checked_date", todayStr).apply()
+                                navController.navigate("dashboard") {
+                                    popUpTo("login") { inclusive = true }
+                                }
+                            } else {
+                                context.getSharedPreferences("pos_prefs", android.content.Context.MODE_PRIVATE).edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
+                                navController.navigate("waiting_activation") {
+                                    popUpTo("login") { inclusive = true }
+                                }
                             }
-                        } else if (status == "device_mismatch" || status == "pending" || status == "off" || !isAccessAllowed || msg.contains("Device", ignoreCase = true) || msg.contains("မတူညီ") || msg.contains("မဖွင့်ရသေးပါ") || msg.contains("pending", ignoreCase = true) || msg.contains("activation", ignoreCase = true)) {
+                        } else if (status == "device_mismatch" || status == "pending" || status == "off") {
                             context.getSharedPreferences("pos_prefs", android.content.Context.MODE_PRIVATE).edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                             navController.navigate("waiting_activation") {
                                 popUpTo("login") { inclusive = true }
                             }
                         } else {
-                            errorMessage = msg.ifEmpty { "ဖုန်းနံပါတ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည် (Incorrect credentials)" }
+                            errorMessage = msg.ifEmpty { "ဖုန်းနံပါတ် သို့မဟုတ် စကားဝှက် မှားယွင်းနေပါသည်" }
                         }
                     }
                 },
@@ -8793,13 +8813,23 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
 fun FilterDrawerContent(
     viewModel: POSViewModel,
     initialTab: Int,
+    isPurchase: Boolean = false,
     onTabChanged: (Int) -> Unit,
     onCustomerSelected: (Customer?) -> Unit,
     onPaymentSelected: (String?) -> Unit,
     onClose: () -> Unit
 ) {
     val customers by viewModel.allCustomers.collectAsState()
+    val suppliers by viewModel.allSuppliers.collectAsState()
     val payments by viewModel.allPayments.collectAsState()
+
+    val targetList = remember(customers, suppliers, isPurchase) {
+        if (isPurchase) {
+            suppliers.map { Customer(id = it.id, name = it.name, phone = it.phone, address = it.address, note = it.note) }
+        } else {
+            customers
+        }
+    }
     
     var customerQuery by remember { mutableStateOf("") }
     var paymentQuery by remember { mutableStateOf("") }
@@ -8825,7 +8855,7 @@ fun FilterDrawerContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (initialTab == 0) "ဈေးဝယ်သူများ" else "ငွေပေးချေမှုများ",
+                text = if (initialTab == 0) (if (isPurchase) "ကုန်သွင်းသူများ" else "ဈေးဝယ်သူများ") else "ငွေပေးချေမှုများ",
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 color = if (initialTab == 0) BrandPurple else Color(0xFF2E7D32)
@@ -8846,13 +8876,13 @@ fun FilterDrawerContent(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "ဈေးဝယ်သူများ",
+                            text = if (isPurchase) "ကုန်သွင်းသူများ" else "ဈေးဝယ်သူများ",
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             color = Color.Gray
                         )
                         Text(
-                            text = "${customers.size} items",
+                            text = "${targetList.size} items",
                             fontSize = 12.sp,
                             color = Color.LightGray
                         )
@@ -8864,7 +8894,7 @@ fun FilterDrawerContent(
                         value = customerQuery,
                         onValueChange = { customerQuery = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("ရှာဖွေရန်...") },
+                        placeholder = { Text(if (isPurchase) "ကုန်သွင်းသူ ရှာရန်..." else "ဈေးဝယ်သူ ရှာရန်...") },
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Color.Gray) },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
@@ -8876,8 +8906,8 @@ fun FilterDrawerContent(
                     
                     Spacer(modifier = Modifier.height(12.dp))
                     
-                    val filteredCustomers = remember(customers, customerQuery) {
-                        customers.filter {
+                    val filteredCustomers = remember(targetList, customerQuery) {
+                        targetList.filter {
                             it.name.contains(customerQuery, ignoreCase = true) ||
                             it.phone.contains(customerQuery, ignoreCase = true)
                         }
@@ -8885,7 +8915,7 @@ fun FilterDrawerContent(
                     
                     if (filteredCustomers.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("ဈေးဝယ်သူမရှိပါ", color = Color.Gray)
+                            Text(if (isPurchase) "ကုန်သွင်းသူမရှိပါ" else "ဈေးဝယ်သူမရှိပါ", color = Color.Gray)
                         }
                     } else {
                         LazyColumn(
@@ -8917,7 +8947,7 @@ fun FilterDrawerContent(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     
                                     Text(
-                                        text = "ဈေးဝယ်သူများ အားလုံး (All Customers)",
+                                        text = if (isPurchase) "ကုန်သွင်းသူများ အားလုံး (All Suppliers)" else "ဈေးဝယ်သူများ အားလုံး (All Customers)",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = BrandPurple
@@ -8990,7 +9020,7 @@ fun FilterDrawerContent(
                     containerColor = BrandPurple,
                     contentColor = Color.White
                 ) {
-                    Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Customer")
+                    Icon(imageVector = Icons.Filled.Add, contentDescription = if (isPurchase) "Add Supplier" else "Add Customer")
                 }
             } else {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -9122,7 +9152,7 @@ fun FilterDrawerContent(
     if (showAddCustomerDialog) {
         AlertDialog(
             onDismissRequest = { showAddCustomerDialog = false },
-            title = { Text("ဈေးဝယ်သူအသစ်ထည့်ရန်", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+            title = { Text(if (isPurchase) "ကုန်သွင်းသူအသစ်ထည့်ရန်" else "ဈေးဝယ်သူအသစ်ထည့်ရန်", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
@@ -9155,15 +9185,27 @@ fun FilterDrawerContent(
                 Button(
                     onClick = {
                         if (newCustName.isNotBlank()) {
-                            viewModel.addCustomer(
-                                name = newCustName,
-                                phone = newCustPhone,
-                                address = newCustAddress,
-                                note = newCustNote,
-                                onSuccess = {
-                                    android.widget.Toast.makeText(context, "သိမ်းဆည်းပြီးပါပြီ", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            )
+                            if (isPurchase) {
+                                viewModel.addSupplier(
+                                    name = newCustName,
+                                    phone = newCustPhone,
+                                    address = newCustAddress,
+                                    note = newCustNote,
+                                    onSuccess = {
+                                        android.widget.Toast.makeText(context, "သိမ်းဆည်းပြီးပါပြီ", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            } else {
+                                viewModel.addCustomer(
+                                    name = newCustName,
+                                    phone = newCustPhone,
+                                    address = newCustAddress,
+                                    note = newCustNote,
+                                    onSuccess = {
+                                        android.widget.Toast.makeText(context, "သိမ်းဆည်းပြီးပါပြီ", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
                             showAddCustomerDialog = false
                             newCustName = ""
                             newCustPhone = ""
@@ -9264,6 +9306,7 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                         FilterDrawerContent(
                             viewModel = viewModel,
                             initialTab = drawerTab,
+                            isPurchase = isPurchaseHistoryMode,
                             onTabChanged = { drawerTab = it },
                             onCustomerSelected = { customer ->
                                 selectedCustomer.value = customer
