@@ -19,7 +19,7 @@ import androidx.room.RoomDatabase
         ExpenseCategory::class,
         Expense::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -49,6 +49,17 @@ abstract class AppDatabase : RoomDatabase() {
                 .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        fun closeDatabase() {
+            synchronized(this) {
+                INSTANCE?.let { db ->
+                    if (db.isOpen) {
+                        try { db.close() } catch (_: Exception) {}
+                    }
+                }
+                INSTANCE = null
             }
         }
     }

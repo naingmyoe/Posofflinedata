@@ -10,6 +10,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        com.example.util.BackupAndExcelUtils.requestAllFilesAccessPermission(this)
 
         setContent {
             val isDark by viewModel.isDarkTheme.collectAsState()
@@ -33,7 +36,14 @@ class MainActivity : ComponentActivity() {
                     color = if (isDark) androidx.compose.ui.graphics.Color(0xFF1B1A1F) else androidx.compose.ui.graphics.Color.White
                 ) {
                     val navController = rememberNavController()
-                    NavHost(navController = navController, startDestination = "splash") {
+                    NavHost(
+                        navController = navController,
+                        startDestination = "splash",
+                        enterTransition = { fadeIn(animationSpec = tween(280)) + slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) },
+                        exitTransition = { fadeOut(animationSpec = tween(220)) + slideOutHorizontally(targetOffsetX = { -it / 4 }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) },
+                        popEnterTransition = { fadeIn(animationSpec = tween(220)) + slideInHorizontally(initialOffsetX = { -it / 4 }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) },
+                        popExitTransition = { fadeOut(animationSpec = tween(280)) + slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+                    ) {
                     composable("splash") {
                         SplashScreen(navController = navController, viewModel = viewModel)
                     }

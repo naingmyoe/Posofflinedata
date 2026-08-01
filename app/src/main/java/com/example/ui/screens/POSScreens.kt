@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,14 +107,14 @@ fun UNLogo(modifier: Modifier = Modifier, size: Dp = 80.dp) {
     Box(
         modifier = modifier
             .size(size)
-            .background(BrandPurple, shape = RoundedCornerShape(percent = 28)),
+            .clip(RoundedCornerShape(percent = 22)),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = "UN",
-            color = Color.White,
-            fontSize = (size.value * 0.45f).sp,
-            fontWeight = FontWeight.Bold
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.un_pos_logo_1784712515828),
+            contentDescription = "UN POS Logo",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit
         )
     }
 }
@@ -134,9 +135,18 @@ fun SplashScreen(navController: NavController, viewModel: POSViewModel) {
 
     fun checkAndProceed() {
         scope.launch {
-            val loggedPhone = sharedPrefs.getString("logged_in_phone", "")
+            var loggedPhone = sharedPrefs.getString("logged_in_phone", "")
 
-            if (!isLoggedIn || loggedPhone.isNullOrEmpty()) {
+            if (loggedPhone.isNullOrEmpty()) {
+                val dbAccounts = viewModel.allAccounts.value
+                val activeAcc = dbAccounts.firstOrNull { it.status == "on" } ?: dbAccounts.firstOrNull()
+                if (activeAcc != null) {
+                    loggedPhone = activeAcc.phoneNo
+                    sharedPrefs.edit().putString("logged_in_phone", loggedPhone).putString("last_registered_phone", loggedPhone).apply()
+                }
+            }
+
+            if (loggedPhone.isNullOrEmpty()) {
                 kotlinx.coroutines.delay(800)
                 navController.navigate("login") {
                     popUpTo("splash") { inclusive = true }
@@ -1299,7 +1309,8 @@ data class PosMenuItem(
     val title: String,
     val icon: ImageVector,
     val route: String? = null,
-    val action: (() -> Unit)? = null
+    val action: (() -> Unit)? = null,
+    val color: Color = BrandPurple
 )
 
 // 5. MAIN POS DASHBOARD SCREEN
@@ -1365,7 +1376,16 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
 
                     // Menu Items
                     NavigationDrawerItem(
-                        icon = { Icon(Icons.Filled.Home, "Home") },
+                        icon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(Color(0xFF5E35B1).copy(alpha = 0.12f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Home, "Home", tint = Color(0xFF5E35B1), modifier = Modifier.size(18.dp))
+                            }
+                        },
                         label = { Text("Home", fontWeight = FontWeight.SemiBold) },
                         selected = true,
                         colors = itemColors,
@@ -1376,7 +1396,16 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                     )
 
                     NavigationDrawerItem(
-                        icon = { Icon(Icons.Filled.People, "Accounts") },
+                        icon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(Color(0xFF8E24AA).copy(alpha = 0.12f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.People, "Accounts", tint = Color(0xFF8E24AA), modifier = Modifier.size(18.dp))
+                            }
+                        },
                         label = { Text("Accounts") },
                         selected = false,
                         colors = itemColors,
@@ -1390,7 +1419,16 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                     )
 
                     NavigationDrawerItem(
-                        icon = { Icon(Icons.Filled.Settings, "Setting") },
+                        icon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(Color(0xFF00897B).copy(alpha = 0.12f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Settings, "Setting", tint = Color(0xFF00897B), modifier = Modifier.size(18.dp))
+                            }
+                        },
                         label = { Text("Setting") },
                         selected = false,
                         colors = itemColors,
@@ -1404,7 +1442,16 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                     )
 
                     NavigationDrawerItem(
-                        icon = { Icon(Icons.Filled.Info, "About") },
+                        icon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(Color(0xFF1E88E5).copy(alpha = 0.12f), shape = CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.Info, "About", tint = Color(0xFF1E88E5), modifier = Modifier.size(18.dp))
+                            }
+                        },
                         label = { Text("About") },
                         selected = false,
                         colors = itemColors,
@@ -1432,186 +1479,252 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                             modifier = Modifier.padding(start = 4.dp)
                         ) {
                             IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = BrandPurple)
+                                Icon(imageVector = Icons.Filled.Menu, contentDescription = "Menu", tint = Color(0xFF1E1035))
                             }
                             Spacer(modifier = Modifier.width(2.dp))
                             Text(
-                                text = "UN Mobile Pos",
+                                text = "UN Mobile POS",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
-                                color = BrandPurple
+                                color = Color(0xFF1E1035)
                             )
                         }
                     },
                     actions = {
-                        // Offline Saved with Cloud sync triggers
+                        // Sync Pill Button
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(if (isOfflineSaved) Color(0xFFE8F5E9) else Color(0xFFFFF3E0))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .background(Color(0xFFDCF0E2))
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
                                 .clickable { viewModel.triggerUpload() }
                         ) {
                             Icon(
-                                imageVector = if (isOfflineSaved) Icons.Filled.CloudDone else Icons.Filled.CloudQueue,
+                                imageVector = if (isOfflineSaved) Icons.Filled.CheckCircle else Icons.Filled.CloudQueue,
                                 contentDescription = "Sync state",
-                                tint = if (isOfflineSaved) Color(0xFF4CAF50) else Color(0xFFFF9800),
+                                tint = Color(0xFF2E7D32),
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = if (isUploading) "Uploading..." else if (isOfflineSaved) "Offline Saved" else "UPLOAD",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isOfflineSaved) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                                text = if (isUploading) "Uploading..." else "Sync",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF2E7D32)
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
 
-                        // Profile Icon next to UPLOAD button
-                        IconButton(onClick = { navController.navigate("user_profile") }) {
+                        // Profile Icon Button
+                        IconButton(
+                            onClick = { navController.navigate("user_profile") },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color(0xFFEDE7F6), shape = CircleShape)
+                        ) {
                             Icon(
-                                imageVector = Icons.Filled.AccountCircle,
+                                imageVector = Icons.Filled.Person,
                                 contentDescription = "Profile",
-                                tint = BrandPurple,
-                                modifier = Modifier.size(28.dp)
+                                tint = Color(0xFF5E35B1),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
+                        Spacer(modifier = Modifier.width(8.dp))
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = AppSurfaceColor)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF7F6FB))
                 )
             }
         ) { innerPadding ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(LightBg)
+                    .background(Color(0xFFF7F6FB))
                     .padding(innerPadding)
                     .verticalScroll(rememberScrollState())
                     .padding(16.dp)
             ) {
-                // Custom Cloud sync banner matching the video precisely
+                // Hero Banner Card
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp)
-                        .clickable { viewModel.triggerUpload() },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF6B5F88))
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, Color(0xFFF0EBF8)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                            .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (isOfflineSaved) Icons.Filled.CloudDone else Icons.Filled.CloudQueue,
-                                contentDescription = "Offline Saved",
-                                tint = Color.LightGray,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (isOfflineSaved) "Offline Saved" else "Offline Mode",
-                                color = Color.White,
+                                text = "Hello, ${currentUser?.username ?: "sdf"} 👋",
+                                fontSize = 13.sp,
+                                color = Color(0xFF757575),
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "UN Mobile POS",
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
+                                color = Color(0xFF1E1035)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "သင့်၏လုပ်ငန်းကို လွယ်ကူမြန်ဆန်စွာ စီမံခန့်ခွဲပါ။",
+                                fontSize = 12.sp,
+                                color = Color(0xFF616161)
                             )
                         }
 
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // Chart Illustration Box
                         Box(
                             modifier = Modifier
-                                .background(Color(0xFFBAA1DB), shape = RoundedCornerShape(16.dp))
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .width(110.dp)
+                                .height(85.dp)
+                                .background(Color.White, shape = RoundedCornerShape(16.dp))
+                                .border(BorderStroke(1.dp, Color(0xFFEDE7F6)), shape = RoundedCornerShape(16.dp))
+                                .padding(8.dp)
                         ) {
-                            Text(
-                                text = if (isUploading) "UPLOADING" else "UPLOAD",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(modifier = Modifier.size(6.dp).background(Color(0xFFFF5252), CircleShape))
+                                    Box(modifier = Modifier.size(6.dp).background(Color(0xFFFFB74D), CircleShape))
+                                    Box(modifier = Modifier.size(6.dp).background(Color(0xFF66BB6A), CircleShape))
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val barWidth = 8.dp.toPx()
+                                    val barSpacing = 6.dp.toPx()
+                                    val heights = listOf(0.4f, 0.6f, 0.5f, 0.8f, 0.9f)
+                                    val purpleLight = Color(0xFFD1C4E9)
+                                    val purpleDark = Color(0xFF5E35B1)
+
+                                    var startX = 6.dp.toPx()
+                                    val points = mutableListOf<androidx.compose.ui.geometry.Offset>()
+
+                                    heights.forEach { hRatio ->
+                                        val barHeight = size.height * hRatio
+                                        val topY = size.height - barHeight
+                                        drawRoundRect(
+                                            color = purpleLight,
+                                            topLeft = androidx.compose.ui.geometry.Offset(startX, topY),
+                                            size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
+                                        )
+                                        points.add(androidx.compose.ui.geometry.Offset(startX + barWidth / 2, topY))
+                                        startX += barWidth + barSpacing
+                                    }
+
+                                    if (points.size > 1) {
+                                        val path = androidx.compose.ui.graphics.Path().apply {
+                                            moveTo(points[0].x, points[0].y)
+                                            for (i in 1 until points.size) {
+                                                lineTo(points[i].x, points[i].y)
+                                            }
+                                        }
+                                        drawPath(
+                                            path = path,
+                                            color = purpleDark,
+                                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                // Section 1: အခြေခံအချက်အလက် (Basic Info)
+                // Section 1: အခြေခံအချက်အလက် (Basic Info - 4 Columns)
                 DashboardSection(
                     title = "အခြေခံအချက်အလက်",
                     items = listOf(
-                        PosMenuItem("ကုန်စည်များ", Icons.Filled.ShoppingBag, action = { viewModel.stockReportMode.value = "DEFAULT"; navController.navigate("products_list") }),
-                        PosMenuItem("ကုန်စုံအုပ်စုများ", Icons.Filled.Folder, "groups_list"),
-                        PosMenuItem("ယူနစ်များ", Icons.Filled.SquareFoot, "units_list_select"),
-                        PosMenuItem("ဈေးဝယ်သူများ", Icons.Filled.People, "customers_list"),
-                        PosMenuItem("ကုန်သွင်းသူများ", Icons.Filled.Groups, "suppliers_list"),
-                        PosMenuItem("ငွေပေးချေမှုများ", Icons.Filled.Payments, "payments_list")
+                        PosMenuItem("ကုန်ပစ္စည်းများ", Icons.Filled.ShoppingBag, action = { viewModel.stockReportMode.value = "DEFAULT"; navController.navigate("products_list") }, color = Color(0xFFE53935)),
+                        PosMenuItem("ကုန်ပစ္စည်း အမျိုးအစား", Icons.Filled.Category, "groups_list", color = Color(0xFF1E88E5)),
+                        PosMenuItem("ယူနစ်များ", Icons.Filled.LocalOffer, "units_list_select", color = Color(0xFF00897B)),
+                        PosMenuItem("ငွေပေးချေမှုများ", Icons.Filled.AccountBalanceWallet, "payments_list", color = Color(0xFFFB8C00)),
+                        PosMenuItem("ဈေးဝယ်သူများ", Icons.Filled.People, "customers_list", color = Color(0xFF8E24AA)),
+                        PosMenuItem("ကုန်သွင်းသူများ", Icons.Filled.Groups, "suppliers_list", color = Color(0xFF4CAF50))
                     ),
                     navController = navController,
-                    columns = 3
+                    columns = 4
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Section 2: အရောင်းကဏ္ဍ (Sales Section)
+                // Section 2: အရောင်း (Sales Section - 4 Columns)
                 DashboardSection(
-                    title = "အရောင်းကဏ္ဍ",
+                    title = "အရောင်း",
                     items = listOf(
-                        PosMenuItem("ဘောက်ချာဖွင့်မည်", Icons.Filled.AddShoppingCart, action = {
+                        PosMenuItem("အရောင်း", Icons.Filled.ShoppingCart, action = {
                             viewModel.isPurchaseMode.value = false
                             viewModel.resetActiveVoucher()
                             navController.navigate("new_voucher")
-                        }),
+                        }, color = Color(0xFF5E35B1)),
                         PosMenuItem("အရောင်းစာရင်း", Icons.Filled.ReceiptLong, action = {
                             viewModel.isPurchaseHistoryMode.value = false
                             navController.navigate("sales_history")
-                        }),
+                        }, color = Color(0xFF1E88E5)),
                         PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
                             navController.navigate("sales_calendar")
-                        })
+                        }, color = Color(0xFF4CAF50)),
+                        PosMenuItem("အကြွေးစာရင်းများ", Icons.Filled.People, "customer_debt", color = Color(0xFFFB8C00))
                     ),
                     navController = navController,
-                    columns = 3
+                    columns = 4
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Section 3: အဝယ်ကဏ္ဍ (Purchase Section)
+                // Section 3: အဝယ်ကဏ္ဍ (Purchase Section - 4 Columns)
                 DashboardSection(
                     title = "အဝယ်ကဏ္ဍ",
                     items = listOf(
-                        PosMenuItem("အဝယ်", Icons.Filled.ShoppingBag, action = {
+                        PosMenuItem("အဝယ်ဖွင့်မည်", Icons.Filled.AddShoppingCart, action = {
                             viewModel.isPurchaseMode.value = true
                             viewModel.resetActiveVoucher()
                             navController.navigate("new_voucher")
-                        }),
+                        }, color = Color(0xFFFB8C00)),
                         PosMenuItem("အဝယ်စာရင်း", Icons.Filled.History, action = {
                             viewModel.isPurchaseHistoryMode.value = true
                             navController.navigate("sales_history")
-                        }),
-                        PosMenuItem("လအလိုက်အဝယ်စာရင်း", Icons.Filled.CalendarViewMonth, action = {
+                        }, color = Color(0xFF5E35B1)),
+                        PosMenuItem("လအလိုက်အဝယ်", Icons.Filled.GridView, action = {
                             viewModel.isPurchaseHistoryMode.value = true
                             navController.navigate("sales_month_selector")
-                        })
+                        }, color = Color(0xFF00897B)),
+                        PosMenuItem("ကုန်သွင်းသူအကြွေး", Icons.Filled.Groups, "supplier_debt", color = Color(0xFFE53935))
                     ),
                     navController = navController,
-                    columns = 3
+                    columns = 4
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Section 4: အကြွေးစာရင်း (Debts Section - 2 Columns)
-                DashboardSection(
-                    title = "အကြွေးစာရင်း",
+                // Section 4: ကုန်ကျစရိတ်များ (Expenses List)
+                DashboardListSection(
+                    title = "ကုန်ကျစရိတ်များ",
                     items = listOf(
-                        PosMenuItem("ရောင်းဝယ်သူ အကြွေးစာရင်း", Icons.Filled.People, "customer_debt"),
-                        PosMenuItem("ကုန်သွင်းသူ အကြွေးစာရင်း", Icons.Filled.Groups, "supplier_debt")
+                        PosMenuItem("ကုန်ကျစရိတ် အသစ်", Icons.Filled.AddCard, "add_expense", color = Color(0xFFE53935)),
+                        PosMenuItem("ကုန်ကျစရိတ် များ", Icons.Filled.Receipt, "expenses_list", color = Color(0xFFFB8C00)),
+                        PosMenuItem("ကုန်ကျစရိတ် ခေါင်းစဉ်", Icons.Filled.Category, "expense_categories", color = Color(0xFF8E24AA))
                     ),
                     navController = navController,
-                    columns = 2
+                    columns = 3
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1620,11 +1733,12 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                 DashboardListSection(
                     title = "လက်ကျန်စစ်ဆေးရန်များ",
                     items = listOf(
-                        PosMenuItem("ကုန်ပစ္စည်းလက်ကျန်", Icons.Filled.Inventory, action = { viewModel.stockReportMode.value = "STOCK_REPORT"; navController.navigate("products_list") }),
-                        PosMenuItem("ကုန်ပစ္စည်းလက်ကျန်အဝယ်တန်ဖိုး", Icons.Filled.Receipt, action = { viewModel.stockReportMode.value = "PURCHASE_VALUE"; navController.navigate("products_list") }),
-                        PosMenuItem("ကုန်ပစ္စည်းလက်ကျန်ရောင်းတန်ဖိုး", Icons.Filled.ReceiptLong, action = { viewModel.stockReportMode.value = "SELLING_VALUE"; navController.navigate("products_list") })
+                        PosMenuItem("ကုန်ပစ္စည်း လက်ကျန်", Icons.Filled.Inventory, action = { viewModel.stockReportMode.value = "STOCK_REPORT"; navController.navigate("products_list") }, color = Color(0xFF5E35B1)),
+                        PosMenuItem("ကုန်ပစ္စည်း လက်ကျန် အဝယ်", Icons.Filled.Receipt, action = { viewModel.stockReportMode.value = "PURCHASE_VALUE"; navController.navigate("products_list") }, color = Color(0xFF1E88E5)),
+                        PosMenuItem("ကုန်ပစ္စည်း လက်ကျန် ရောင်း", Icons.Filled.ReceiptLong, action = { viewModel.stockReportMode.value = "SELLING_VALUE"; navController.navigate("products_list") }, color = Color(0xFF4CAF50))
                     ),
-                    navController = navController
+                    navController = navController,
+                    columns = 3
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -1633,37 +1747,25 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                 DashboardListSection(
                     title = "အစီရင်ခံစာများ",
                     items = listOf(
-                        PosMenuItem("နေ့စဉ်အရောင်းစာရင်း", Icons.Filled.Today, action = {
+                        PosMenuItem("နေ့စဉ်အရောင်း စာရင်း", Icons.Filled.Today, action = {
                             viewModel.isPurchaseHistoryMode.value = false
                             navController.navigate("sales_history")
-                        }),
+                        }, color = Color(0xFF5E35B1)),
                         PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
                             viewModel.isPurchaseHistoryMode.value = false
                             navController.navigate("sales_calendar")
-                        }),
-                        PosMenuItem("လအလိုက်အရောင်းစာရင်း", Icons.Filled.CalendarViewMonth, action = {
+                        }, color = Color(0xFF1E88E5)),
+                        PosMenuItem("လအလိုက်အ ရောင်းစာရင်း", Icons.Filled.CalendarViewMonth, action = {
                             viewModel.isPurchaseHistoryMode.value = false
                             navController.navigate("sales_month_selector")
-                        }),
-                        PosMenuItem("ကုန်ပစ္စည်းအလိုက်စုစုပေါင်းအရောင်း (Total)", Icons.Filled.PieChart, "sales_product_total"),
-                        PosMenuItem("ကုန်ပစ္စည်းအလိုက်စုစုပေါင်းအရောင်း (Quantity)", Icons.Filled.BarChart, "sales_product_quantity"),
-                        PosMenuItem("Customer အလိုက်စုစုပေါင်းဝယ်ယူမှု", Icons.Filled.Person, "customer_sales_total"),
-                        PosMenuItem("အမြတ်စာရင်း", Icons.Filled.TrendingUp, "profit_loss_report")
+                        }, color = Color(0xFF00897B)),
+                        PosMenuItem("ကုန်ပစ္စည်း အလိုက်", Icons.Filled.PieChart, "sales_product_quantity", color = Color(0xFF4CAF50)),
+                        PosMenuItem("Customer အလိုက်", Icons.Filled.Person, "customer_sales_total", color = Color(0xFF1E88E5)),
+                        PosMenuItem("အမြတ်စာရင်း (Profit/Loss)", Icons.Filled.TrendingUp, "profit_loss_report", color = Color(0xFF8E24AA)),
+                        PosMenuItem("အရောင်းချုပ်", Icons.Filled.BarChart, "sales_product_total", color = Color(0xFFFB8C00))
                     ),
-                    navController = navController
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Section 7: ကုန်ကျစရိတ်များ (Expenses List)
-                DashboardListSection(
-                    title = "ကုန်ကျစရိတ်များ",
-                    items = listOf(
-                        PosMenuItem("ကုန်ကျစရိတ်အသစ်", Icons.Filled.AddCard, "add_expense"),
-                        PosMenuItem("ကုန်ကျစရိတ်များ", Icons.Filled.Receipt, "expenses_list"),
-                        PosMenuItem("ကုန်ကျစရိတ်ခေါင်းစဉ်", Icons.Filled.Category, "expense_categories")
-                    ),
-                    navController = navController
+                    navController = navController,
+                    columns = 4
                 )
             }
         }
@@ -1675,71 +1777,100 @@ fun DashboardSection(
     title: String,
     items: List<PosMenuItem>,
     navController: NavController,
-    columns: Int = 3
+    columns: Int = 4
 ) {
     Column {
-        Text(
-            text = title,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.DarkGray,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-        )
-
-        Card(
-            colors = CardDefaults.cardColors(containerColor = AppSurfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, if (globalIsDarkTheme) Color(0xFF2C2B35) else Color(0xFFE2DDF0)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 2.dp, bottom = 10.dp)
         ) {
-            Column(modifier = Modifier.padding(8.dp)) {
-                items.chunked(columns).forEach { rowItems ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        rowItems.forEach { item ->
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(18.dp)
+                    .background(Color(0xFF5E35B1), shape = RoundedCornerShape(2.dp))
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1035)
+            )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items.chunked(columns).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowItems.forEach { item ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, Color(0xFFF0EBF8)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    if (item.route != null) {
+                                        navController.navigate(item.route)
+                                    } else {
+                                        item.action?.invoke()
+                                    }
+                                }
+                        ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .clickable {
-                                        if (item.route != null) {
-                                            navController.navigate(item.route)
-                                        } else {
-                                            item.action?.invoke()
-                                        }
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 4.dp)
+                                    .fillMaxWidth()
+                                    .padding(vertical = 10.dp, horizontal = 2.dp)
                             ) {
+                                val softBg = item.color.copy(alpha = 0.12f)
                                 Box(
                                     modifier = Modifier
-                                        .size(44.dp)
-                                        .background(AppCardBgColor, shape = RoundedCornerShape(12.dp)),
+                                        .size(42.dp)
+                                        .background(softBg, shape = CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
                                         imageVector = item.icon,
                                         contentDescription = item.title,
-                                        tint = BrandPurple,
-                                        modifier = Modifier.size(24.dp)
+                                        tint = item.color,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
                                 Text(
                                     text = item.title,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium,
-                                    color = AppTextColor,
-                                    textAlign = TextAlign.Center
+                                    color = Color(0xFF2C2C38),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    minLines = 2,
+                                    lineHeight = 13.sp,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Box(
+                                    modifier = Modifier
+                                        .width(20.dp)
+                                        .height(3.dp)
+                                        .background(item.color, shape = RoundedCornerShape(2.dp))
                                 )
                             }
                         }
-                        if (rowItems.size < columns) {
-                            repeat(columns - rowItems.size) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
+                    }
+                    if (rowItems.size < columns) {
+                        repeat(columns - rowItems.size) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
@@ -1752,74 +1883,109 @@ fun DashboardSection(
 fun DashboardListSection(
     title: String,
     items: List<PosMenuItem>,
-    navController: NavController
+    navController: NavController,
+    columns: Int = 3
 ) {
     Column {
-        Text(
-            text = title,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.DarkGray,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 2.dp, bottom = 10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(18.dp)
+                    .background(Color(0xFF5E35B1), shape = RoundedCornerShape(2.dp))
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E1035)
+            )
+        }
 
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.White),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, Color(0xFFE2DDF0)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(1.dp, Color(0xFFF0EBF8)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                items.forEachIndexed { index, item ->
+            Column(modifier = Modifier.padding(8.dp)) {
+                items.chunked(columns).forEach { rowItems ->
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (item.route != null) {
-                                    navController.navigate(item.route)
-                                } else {
-                                    item.action?.invoke()
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        rowItems.forEach { item ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(vertical = 10.dp, horizontal = 2.dp)
+                                    .clickable {
+                                        if (item.route != null) {
+                                            navController.navigate(item.route)
+                                        } else {
+                                            item.action?.invoke()
+                                        }
+                                    }
+                            ) {
+                                val softBg = item.color.copy(alpha = 0.12f)
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .background(softBg, shape = CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = item.icon,
+                                        contentDescription = item.title,
+                                        tint = item.color,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Text(
+                                    text = item.title,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF2C2C38),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    minLines = 2,
+                                    lineHeight = 13.sp,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(26.dp)
+                                        .border(BorderStroke(1.dp, Color(0xFF7E57C2).copy(alpha = 0.4f)), shape = CircleShape)
+                                        .background(Color.White, shape = CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.ChevronRight,
+                                        contentDescription = "Go",
+                                        tint = Color(0xFF5E35B1),
+                                        modifier = Modifier.size(16.dp)
+                                    )
                                 }
                             }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(Color(0xFFECE9F6), shape = RoundedCornerShape(10.dp)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = item.icon,
-                                    contentDescription = item.title,
-                                    tint = BrandPurple,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = item.title,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF1C1B1F)
-                            )
                         }
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowRight,
-                            contentDescription = "Go",
-                            tint = Color.LightGray,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    if (index < items.size - 1) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = Color(0xFFF1EFF5)
-                        )
+                        if (rowItems.size < columns) {
+                            repeat(columns - rowItems.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
             }
@@ -2247,6 +2413,7 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
     val products by viewModel.allProducts.collectAsState()
     val groups by viewModel.allGroups.collectAsState()
     val stockReportMode by viewModel.stockReportMode.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
 
     val screenTitle = when (stockReportMode) {
@@ -2530,7 +2697,7 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "${numberFormat.format(totalPurchaseValue.toInt())} Ks",
+                                    text = "${numberFormat.format(totalPurchaseValue.toInt())} $selectedCurrency",
                                     fontSize = 15.sp,
                                     color = Color.Black,
                                     fontWeight = FontWeight.Bold
@@ -2549,7 +2716,7 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "${numberFormat.format(totalSalesValue.toInt())} Ks",
+                                    text = "${numberFormat.format(totalSalesValue.toInt())} $selectedCurrency",
                                     fontSize = 15.sp,
                                     color = BrandPurple,
                                     fontWeight = FontWeight.Bold
@@ -2669,12 +2836,13 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                             items(displayedProducts) { product ->
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(16.dp),
                                     border = BorderStroke(1.dp, Color(0xFFE2DDF0)),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(6.dp)
+                                        .height(160.dp)
+                                        .padding(4.dp)
                                         .clickable(enabled = stockReportMode == "DEFAULT" || stockReportMode == "STOCK_REPORT") {
                                             if (stockReportMode == "DEFAULT") {
                                                 viewModel.editingProduct.value = product
@@ -2685,96 +2853,48 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                             }
                                         }
                                 ) {
-                                    Box(modifier = Modifier.fillMaxWidth()) {
-                                        if (stockReportMode == "DEFAULT") {
-                                            Text(
-                                                text = "${numberFormat.format(product.sellingPrice.toInt())} Ks",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 11.sp,
-                                                color = BrandPurple,
-                                                modifier = Modifier
-                                                    .align(Alignment.TopEnd)
-                                                    .padding(8.dp)
+                                    Box(modifier = Modifier.fillMaxSize()) {
+                                        if (product.imageUri.isNotEmpty()) {
+                                            coil.compose.AsyncImage(
+                                                model = product.imageUri,
+                                                contentDescription = product.name,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                             )
-                                        }
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(12.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center
-                                        ) {
+                                        } else {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(40.dp)
-                                                    .background(Color(0xFFE8E5F3), shape = CircleShape),
+                                                    .fillMaxSize()
+                                                    .background(Color(0xFFD3C2FE)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Inventory,
                                                     contentDescription = "Product",
-                                                    tint = BrandPurple,
-                                                    modifier = Modifier.size(20.dp)
+                                                    tint = Color(0xFF533B78),
+                                                    modifier = Modifier.size(38.dp)
                                                 )
                                             }
-                                            Spacer(modifier = Modifier.height(8.dp))
+                                        }
+
+                                        // Dark purple bottom bar as in screenshot showing item name only
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .align(Alignment.BottomCenter)
+                                                .background(Color(0xFF533B78))
+                                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
                                             Text(
                                                 text = product.name,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp,
-                                                color = AppTextColor,
+                                                fontWeight = FontWeight.Medium,
+                                                fontSize = 13.sp,
+                                                color = Color.White,
                                                 textAlign = TextAlign.Center,
-                                                maxLines = 2
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            
-                                            when (stockReportMode) {
-                                                "PURCHASE_VALUE" -> {
-                                                    val totalVal = product.quantity * product.purchasePrice.toInt()
-                                                    Text(
-                                                        text = "${numberFormat.format(totalVal)} Ks",
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.Black,
-                                                        fontSize = 13.sp,
-                                                        textAlign = TextAlign.Center
-                                                    )
-                                                    Spacer(modifier = Modifier.height(2.dp))
-                                                    Text(
-                                                        text = "${product.quantity} ${product.unit} x ${numberFormat.format(product.purchasePrice.toInt())} Ks",
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = Color.Gray,
-                                                        fontSize = 11.sp,
-                                                        textAlign = TextAlign.Center
-                                                    )
-                                                }
-                                                "SELLING_VALUE" -> {
-                                                    val totalVal = product.quantity * product.sellingPrice.toInt()
-                                                    Text(
-                                                        text = "${numberFormat.format(totalVal)} Ks",
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = BrandPurple,
-                                                        fontSize = 13.sp,
-                                                        textAlign = TextAlign.Center
-                                                    )
-                                                    Spacer(modifier = Modifier.height(2.dp))
-                                                    Text(
-                                                        text = "${product.quantity} ${product.unit} x ${numberFormat.format(product.sellingPrice.toInt())} Ks",
-                                                        fontWeight = FontWeight.Medium,
-                                                        color = Color.Gray,
-                                                        fontSize = 11.sp,
-                                                        textAlign = TextAlign.Center
-                                                    )
-                                                }
-                                                else -> {
-                                                    Text(
-                                                        text = "လက်ကျန်: ${product.quantity} ${product.unit}",
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = BrandPurple,
-                                                        fontSize = 13.sp,
-                                                        textAlign = TextAlign.Center
-                                                    )
-                                                }
-                                            }
                                         }
                                     }
                                 }
@@ -2816,47 +2936,60 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                             Box(
                                                 modifier = Modifier
                                                     .size(44.dp)
-                                                    .background(Color(0xFFE8E5F3), shape = CircleShape),
+                                                    .background(Color(0xFFEDE7F6), shape = RoundedCornerShape(12.dp)),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Filled.Inventory,
+                                                    imageVector = Icons.Filled.Inbox,
                                                     contentDescription = "Product",
-                                                    tint = BrandPurple,
-                                                    modifier = Modifier.size(24.dp)
+                                                    tint = Color(0xFF5E35B1),
+                                                    modifier = Modifier.size(22.dp)
                                                 )
                                             }
-                                            Spacer(modifier = Modifier.width(16.dp))
+                                            Spacer(modifier = Modifier.width(12.dp))
                                             Column {
-                                                Text(
-                                                    text = product.name,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 16.sp,
-                                                    color = Color(0xFF1C1B1F)
-                                                )
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    val dotColor = when (product.id % 3) {
+                                                        0L -> Color(0xFFFFB74D)
+                                                        1L -> Color(0xFF7E57C2)
+                                                        else -> Color(0xFF66BB6A)
+                                                    }
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(8.dp)
+                                                            .background(dotColor, shape = CircleShape)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = product.name,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 16.sp,
+                                                        color = Color(0xFF1C1B1F)
+                                                    )
+                                                }
                                                 Spacer(modifier = Modifier.height(4.dp))
                                                 
                                                 when (stockReportMode) {
                                                     "PURCHASE_VALUE" -> {
                                                         Text(
-                                                            text = "${product.quantity} ${product.unit} x ${numberFormat.format(product.purchasePrice.toInt())} Ks",
+                                                            text = "${product.quantity} ${product.unit} x ${numberFormat.format(product.purchasePrice.toInt())} $selectedCurrency",
                                                             fontSize = 13.sp,
-                                                            color = Color.Gray
+                                                            color = Color(0xFF757575)
                                                         )
                                                     }
                                                     "SELLING_VALUE" -> {
                                                         Text(
-                                                            text = "${product.quantity} ${product.unit} x ${numberFormat.format(product.sellingPrice.toInt())} Ks",
+                                                            text = "${product.quantity} ${product.unit} x ${numberFormat.format(product.sellingPrice.toInt())} $selectedCurrency",
                                                             fontSize = 13.sp,
-                                                            color = Color.Gray
+                                                            color = Color(0xFF757575)
                                                         )
                                                     }
                                                     else -> {
                                                         if (stockReportMode == "DEFAULT") {
                                                             Text(
-                                                                text = "လက်ကျန်: ${product.quantity} ${product.unit}",
+                                                                text = "လက်ကျန်: ${product.quantity}",
                                                                 fontSize = 13.sp,
-                                                                color = Color.Gray
+                                                                color = Color(0xFF757575)
                                                             )
                                                         }
                                                     }
@@ -2866,34 +2999,34 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             if (stockReportMode != "DEFAULT") {
                                                 Column(horizontalAlignment = Alignment.End) {
-                                                val displayText = when (stockReportMode) {
-                                                    "PURCHASE_VALUE" -> {
-                                                        val displayPrice = product.quantity * product.purchasePrice.toInt()
-                                                        "${numberFormat.format(displayPrice)} Ks"
+                                                    val displayText = when (stockReportMode) {
+                                                        "PURCHASE_VALUE" -> {
+                                                            val displayPrice = product.quantity * product.purchasePrice.toInt()
+                                                            "${numberFormat.format(displayPrice)} $selectedCurrency"
+                                                        }
+                                                        "SELLING_VALUE" -> {
+                                                            val displayPrice = product.quantity * product.sellingPrice.toInt()
+                                                            "${numberFormat.format(displayPrice)} $selectedCurrency"
+                                                        }
+                                                        else -> {
+                                                            "${product.quantity} ${product.unit}"
+                                                        }
                                                     }
-                                                    "SELLING_VALUE" -> {
-                                                        val displayPrice = product.quantity * product.sellingPrice.toInt()
-                                                        "${numberFormat.format(displayPrice)} Ks"
-                                                    }
-                                                    else -> {
-                                                        "${product.quantity} ${product.unit}"
-                                                    }
+                                                    val textColor = if (stockReportMode == "PURCHASE_VALUE") Color.Black else Color(0xFF1E1035)
+                                                    Text(
+                                                        text = displayText,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = textColor,
+                                                        fontSize = 15.sp
+                                                    )
                                                 }
-                                                val textColor = if (stockReportMode == "PURCHASE_VALUE") Color.Black else BrandPurple
-                                                Text(
-                                                    text = displayText,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = textColor,
-                                                    fontSize = 15.sp
-                                                )
-                                            }
                                             }
                                             if (stockReportMode == "DEFAULT") {
                                                 Text(
-                                                    text = "${numberFormat.format(product.sellingPrice.toInt())} Ks",
+                                                    text = "${numberFormat.format(product.sellingPrice.toInt())} $selectedCurrency",
                                                     fontWeight = FontWeight.Bold,
-                                                    fontSize = 15.sp,
-                                                    color = BrandPurple
+                                                    fontSize = 16.sp,
+                                                    color = Color(0xFF1E1035)
                                                 )
                                             }
                                         }
@@ -2988,69 +3121,6 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
-
-                    // Title: View By Availability
-                    Text("View By Availability", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                filterAvailability = if (filterAvailability == "available") null else "available"
-                            }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = "Check",
-                            tint = if (filterAvailability == "available") BrandPurple else Color.LightGray
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("ရရှိနိုင်သည်", fontWeight = FontWeight.Bold, color = Color(0xFF1C1B1F))
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                filterAvailability = if (filterAvailability == "unavailable") null else "unavailable"
-                            }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = "Check",
-                            tint = if (filterAvailability == "unavailable") BrandPurple else Color.LightGray
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("မရရှိနိုင်ပါ", fontWeight = FontWeight.Bold, color = Color(0xFF1C1B1F))
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // Title: View By Expire Date
-                    Text("View By Expire Date", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { filterNearExpired = !filterNearExpired }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.CalendarMonth,
-                            contentDescription = "Calendar",
-                            tint = if (filterNearExpired) BrandPurple else Color.LightGray
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("သက်တမ်းကုန်ဆုံးရန်နီးကပ်နေသောကုန်ပစ္စည်းများ", fontWeight = FontWeight.Bold, color = Color(0xFF1C1B1F))
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
@@ -3099,6 +3169,24 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
 
     val context = LocalContext.current
 
+    val prodImageUri by viewModel.prodImageUri.collectAsState()
+
+    val productPhotoLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                // Ignore
+            }
+            viewModel.prodImageUri.value = uri.toString()
+        }
+    }
+
     LaunchedEffect(editingProduct) {
         editingProduct?.let {
             viewModel.prodName.value = it.name
@@ -3111,6 +3199,7 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
             viewModel.prodBarcode.value = it.barcode
             viewModel.prodQty.value = it.quantity.toString()
             viewModel.prodAlertQty.value = it.alertQuantity.toString()
+            viewModel.prodImageUri.value = it.imageUri
         }
     }
 
@@ -3151,6 +3240,68 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                     color = BrandPurple,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
+
+                // 0. ကုန်စည် ဓာတ်ပုံ
+                CustomProductField(label = "ကုန်စည် ဓာတ်ပုံ") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(90.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color.White)
+                                .border(1.5.dp, if (prodImageUri.isNotEmpty()) BrandPurple else Color(0xFFE0E0E0), RoundedCornerShape(14.dp))
+                                .clickable { productPhotoLauncher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (prodImageUri.isNotEmpty()) {
+                                coil.compose.AsyncImage(
+                                    model = prodImageUri,
+                                    contentDescription = "Product Image",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Filled.AddAPhoto,
+                                        contentDescription = "Add Photo",
+                                        tint = BrandPurple,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "ဓာတ်ပုံထည့်ရန်",
+                                        fontSize = 11.sp,
+                                        color = BrandPurple,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        if (prodImageUri.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(16.dp))
+                            OutlinedButton(
+                                onClick = { viewModel.prodImageUri.value = "" },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                                border = BorderStroke(1.dp, Color(0xFFFFCDD2)),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Remove Photo",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("ဓာတ်ပုံပယ်ဖျက်မည်", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // 1. ကုန်စည်အမည်*
                 CustomProductField(label = "ကုန်စည်အမည်*") {
@@ -3901,33 +4052,7 @@ fun UnitsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                 .background(Color.White)
                 .padding(innerPadding)
         ) {
-            // Search bar matching video (Enter Unit)
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Enter Unit", color = Color.Gray) },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Filled.Search, contentDescription = "Search", tint = Color.Gray)
-                },
-                trailingIcon = {
-                    IconButton(onClick = { showAddDialog = true }) {
-                        Icon(imageVector = Icons.Filled.PostAdd, contentDescription = "Add Unit", tint = BrandPurple)
-                    }
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = AppTextColor,
-                    unfocusedTextColor = AppTextColor,
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent
-                ),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                singleLine = true
-            )
+
             if (filteredUnits.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -4508,6 +4633,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
     val printDiscount by viewModel.printReceiptDiscount.collectAsState()
     val printFee by viewModel.printReceiptFee.collectAsState()
     val isPurchaseMode by viewModel.isPurchaseMode.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var screenState by rememberSaveable { mutableStateOf("select_mode") } // "select_mode", "select_products", "voucher_detail"
@@ -4532,13 +4658,35 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
     var scannerBuffer by remember { mutableStateOf("") }
     var lastKeyTime by remember { mutableStateOf(0L) }
 
+    var showOutOfStockDialogFor by remember { mutableStateOf<com.example.data.Product?>(null) }
+
+    fun tryAddToCart(prod: com.example.data.Product) {
+        val cartItem = cart.find { it.product.id == prod.id }
+        val cartQty = cartItem?.quantity ?: 0
+        if (!isPurchaseMode && (prod.quantity <= 0 || (prod.trackStock && cartQty >= prod.quantity))) {
+            showOutOfStockDialogFor = prod
+        } else {
+            if (cartItem == null) {
+                viewModel.addToCart(prod)
+            } else {
+                viewModel.updateCartQuantity(prod.id, cartQty + 1)
+            }
+        }
+    }
+
     fun processScannedBarcode(code: String): Boolean {
         val cleanCode = code.trim()
         if (cleanCode.isEmpty()) return false
         val matched = products.find { it.barcode.equals(cleanCode, ignoreCase = true) || it.barcode == cleanCode }
         if (matched != null) {
-            viewModel.addToCart(matched)
-            Toast.makeText(context, "${matched.name} ထည့်ပြီးပါပြီ", Toast.LENGTH_SHORT).show()
+            val cartItem = cart.find { it.product.id == matched.id }
+            val cartQty = cartItem?.quantity ?: 0
+            if (!isPurchaseMode && (matched.quantity <= 0 || (matched.trackStock && cartQty >= matched.quantity))) {
+                showOutOfStockDialogFor = matched
+            } else {
+                tryAddToCart(matched)
+                Toast.makeText(context, "${matched.name} ထည့်ပြီးပါပြီ", Toast.LENGTH_SHORT).show()
+            }
             searchQuery = ""
             return true
         }
@@ -4611,6 +4759,46 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
     var showFeeDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     var showDiscountFeeSheet by remember { mutableStateOf(false) }
+
+    if (showOutOfStockDialogFor != null) {
+        AlertDialog(
+            onDismissRequest = { showOutOfStockDialogFor = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = "Warning",
+                    tint = Color(0xFFD32F2F),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "ပစ္စည်းလက်ကျန်မရှိပါ",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color(0xFFD32F2F)
+                )
+            },
+            text = {
+                Text(
+                    text = "'${showOutOfStockDialogFor?.name}' သည် အရေအတွက် (${showOutOfStockDialogFor?.quantity ?: 0}) ဖြစ်နေသောကြောင့် အရောင်းထဲသို့ ထည့်သွင်း၍ မရပါ။",
+                    fontSize = 14.sp,
+                    color = Color.DarkGray
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showOutOfStockDialogFor = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandPurple),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("နားလည်ပါပြီ", color = Color.White)
+                }
+            },
+            shape = RoundedCornerShape(16.dp),
+            containerColor = Color.White
+        )
+    }
 
     val showDatePicker = {
         val calendar = selectedCalendar.value
@@ -4898,13 +5086,10 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             shape = RoundedCornerShape(12.dp),
                                             modifier = Modifier
                                                 .fillMaxWidth()
+                                                .height(150.dp)
                                                 .combinedClickable(
                                                     onClick = {
-                                                        if (cartItem == null) {
-                                                            viewModel.addToCart(prod)
-                                                        } else {
-                                                            viewModel.updateCartQuantity(prod.id, cartQty + 1)
-                                                        }
+                                                        tryAddToCart(prod)
                                                     },
                                                     onLongClick = {
                                                         val currentCart = viewModel.cart.value
@@ -4912,63 +5097,89 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                         val idx = if (existingIndex != -1) {
                                                             existingIndex
                                                         } else {
-                                                            viewModel.addToCart(prod)
-                                                            viewModel.cart.value.size - 1
+                                                            if (!isPurchaseMode && (prod.quantity <= 0 || (prod.trackStock && cartQty >= prod.quantity))) {
+                                                                showOutOfStockDialogFor = prod
+                                                                -1
+                                                            } else {
+                                                                viewModel.addToCart(prod)
+                                                                viewModel.cart.value.size - 1
+                                                            }
                                                         }
-                                                        val item = viewModel.cart.value.getOrNull(idx)
-                                                        if (item != null) {
-                                                            selectedCartItemIndex = idx
-                                                            tempQty = item.quantity
-                                                            asDifferentItem = false
-                                                            showAdvanced = false
-                                                            isNewCartItemPending = (existingIndex == -1)
-                                                            editCartItemReturnState = "select_products"
-                                                            screenState = "edit_cart_item"
+                                                        if (idx != -1) {
+                                                            val item = viewModel.cart.value.getOrNull(idx)
+                                                            if (item != null) {
+                                                                selectedCartItemIndex = idx
+                                                                tempQty = item.quantity
+                                                                asDifferentItem = false
+                                                                showAdvanced = false
+                                                                isNewCartItemPending = (existingIndex == -1)
+                                                                editCartItemReturnState = "select_products"
+                                                                screenState = "edit_cart_item"
+                                                            }
                                                         }
                                                     }
                                                 ),
                                             elevation = CardDefaults.cardElevation(1.dp)
                                         ) {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(12.dp),
-                                                horizontalAlignment = Alignment.CenterHorizontally
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(40.dp)
-                                                        .background(Color(0xFFF2F0F7), shape = RoundedCornerShape(8.dp)),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Layers,
-                                                        contentDescription = "Product icon",
-                                                        tint = BrandPurple,
-                                                        modifier = Modifier.size(20.dp)
+                                            Box(modifier = Modifier.fillMaxSize()) {
+                                                if (prod.imageUri.isNotEmpty()) {
+                                                    coil.compose.AsyncImage(
+                                                        model = prod.imageUri,
+                                                        contentDescription = prod.name,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                                     )
-                                                }
-                                                Spacer(modifier = Modifier.height(8.dp))
-                                                Text(
-                                                    text = prod.name,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 14.sp,
-                                                    color = AppTextColor,
-                                                    maxLines = 1,
-                                                    textAlign = TextAlign.Center
-                                                )
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = "${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks",
-                                                    fontSize = 12.sp,
-                                                    color = Color.Gray
-                                                )
-                                                if (cartQty > 0) {
-                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                } else {
                                                     Box(
                                                         modifier = Modifier
-                                                            .size(8.dp)
-                                                            .background(BrandPurple, shape = CircleShape)
+                                                            .fillMaxSize()
+                                                            .background(Color(0xFFD3C2FE)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Layers,
+                                                            contentDescription = "Product icon",
+                                                            tint = Color(0xFF533B78),
+                                                            modifier = Modifier.size(38.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                // Cart Quantity Badge on top-right if in cart
+                                                if (cartQty > 0) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .align(Alignment.TopEnd)
+                                                            .padding(6.dp)
+                                                            .background(BrandPurple, shape = RoundedCornerShape(12.dp))
+                                                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "$cartQty",
+                                                            color = Color.White,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 11.sp
+                                                        )
+                                                    }
+                                                }
+
+                                                // Dark purple bottom bar showing item name only
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .align(Alignment.BottomCenter)
+                                                        .background(Color(0xFF533B78))
+                                                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = prod.name,
+                                                        fontWeight = FontWeight.Medium,
+                                                        fontSize = 13.sp,
+                                                        color = Color.White,
+                                                        textAlign = TextAlign.Center,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
                                             }
@@ -4993,11 +5204,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                 .padding(vertical = 4.dp)
                                                 .combinedClickable(
                                                     onClick = {
-                                                        if (cartItem == null) {
-                                                            viewModel.addToCart(prod)
-                                                        } else {
-                                                            viewModel.updateCartQuantity(prod.id, cartQty + 1)
-                                                        }
+                                                        tryAddToCart(prod)
                                                     },
                                                     onLongClick = {
                                                         val currentCart = viewModel.cart.value
@@ -5005,18 +5212,25 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                         val idx = if (existingIndex != -1) {
                                                             existingIndex
                                                         } else {
-                                                            viewModel.addToCart(prod)
-                                                            viewModel.cart.value.size - 1
+                                                            if (!isPurchaseMode && (prod.quantity <= 0 || (prod.trackStock && cartQty >= prod.quantity))) {
+                                                                showOutOfStockDialogFor = prod
+                                                                -1
+                                                            } else {
+                                                                viewModel.addToCart(prod)
+                                                                viewModel.cart.value.size - 1
+                                                            }
                                                         }
-                                                        val item = viewModel.cart.value.getOrNull(idx)
-                                                        if (item != null) {
-                                                            selectedCartItemIndex = idx
-                                                            tempQty = item.quantity
-                                                            asDifferentItem = false
-                                                            showAdvanced = false
-                                                            isNewCartItemPending = (existingIndex == -1)
-                                                            editCartItemReturnState = "select_products"
-                                                            screenState = "edit_cart_item"
+                                                        if (idx != -1) {
+                                                            val item = viewModel.cart.value.getOrNull(idx)
+                                                            if (item != null) {
+                                                                selectedCartItemIndex = idx
+                                                                tempQty = item.quantity
+                                                                asDifferentItem = false
+                                                                showAdvanced = false
+                                                                isNewCartItemPending = (existingIndex == -1)
+                                                                editCartItemReturnState = "select_products"
+                                                                screenState = "edit_cart_item"
+                                                            }
                                                         }
                                                     }
                                                 ),
@@ -5030,24 +5244,34 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             ) {
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(40.dp)
-                                                        .background(Color(0xFFE8E7EC), shape = RoundedCornerShape(8.dp)),
+                                                        .size(44.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .background(Color(0xFFE8E7EC)),
                                                     contentAlignment = Alignment.Center
                                                 ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Layers,
-                                                        contentDescription = "Product icon",
-                                                        tint = BrandPurple,
-                                                        modifier = Modifier.size(20.dp)
-                                                    )
+                                                    if (prod.imageUri.isNotEmpty()) {
+                                                        coil.compose.AsyncImage(
+                                                            model = prod.imageUri,
+                                                            contentDescription = prod.name,
+                                                            modifier = Modifier.fillMaxSize(),
+                                                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                        )
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Layers,
+                                                            contentDescription = "Product icon",
+                                                            tint = BrandPurple,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
                                                 }
-                                                
+
                                                 Spacer(modifier = Modifier.width(12.dp))
-                                                
+
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(prod.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AppTextColor)
                                                     Spacer(modifier = Modifier.height(4.dp))
-                                                    Text("${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks", fontSize = 13.sp, color = Color.Gray)
+                                                    Text("${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} $selectedCurrency", fontSize = 13.sp, color = Color.Gray)
                                                 }
 
                                                 if (cartQty > 0) {
@@ -5456,7 +5680,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "${numberFormat.format(currentTotal)} Ks",
+                                text = "${numberFormat.format(currentTotal)} $selectedCurrency",
                                 fontSize = 32.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = AppTextColor
@@ -5552,7 +5776,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             color = Color.DarkGray
                                         )
                                         Text(
-                                            text = "${numberFormat.format(remainingVal)} Ks",
+                                            text = "${numberFormat.format(remainingVal)} $selectedCurrency",
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (remainingVal > 0) Color.Red else Color.DarkGray
@@ -5583,7 +5807,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             color = Color.DarkGray
                                         )
                                         Text(
-                                            text = "${numberFormat.format(creditChangeVal)} Ks",
+                                            text = "${numberFormat.format(creditChangeVal)} $selectedCurrency",
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (creditChangeVal > 0) Color(0xFF4CAF50) else Color.DarkGray
@@ -5611,7 +5835,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             fontWeight = FontWeight.Bold,
                                             color = Color.DarkGray
                                         )
-                                        val changeText = if (paidAmountString.isEmpty()) "0 Ks" else "${numberFormat.format(changeVal)} Ks"
+                                        val changeText = if (paidAmountString.isEmpty()) "0 $selectedCurrency" else "${numberFormat.format(changeVal)} $selectedCurrency"
                                         Text(
                                             text = changeText,
                                             fontSize = 18.sp,
@@ -5635,7 +5859,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         val initialBalance = if (isCredit) (completedTotalAmount - paidVal).coerceAtLeast(0.0) else 0.0
                                         val initialChange = if (isCredit) (paidVal - completedTotalAmount).coerceAtLeast(0.0) else changeVal
                                         val initialNote = if (isCredit) {
-                                            "စုစုပေါင်း: ${numberFormat.format(completedTotalAmount.toInt())} Ks\nပေးငွေ: ${numberFormat.format(paidVal.toInt())} Ks\nကျန်ငွေ: ${numberFormat.format(initialBalance.toInt())} Ks"
+                                            "စုစုပေါင်း: ${numberFormat.format(completedTotalAmount.toInt())} $selectedCurrency\nပေးငွေ: ${numberFormat.format(paidVal.toInt())} $selectedCurrency\nကျန်ငွေ: ${numberFormat.format(initialBalance.toInt())} $selectedCurrency"
                                         } else ""
 
                                         viewModel.saveOrUpdateVoucher(
@@ -6082,14 +6306,14 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         Text(item.product.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.DarkGray)
                                     }
                                     Text(
-                                        text = "${(if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice).toInt()} Ks x${item.quantity}",
+                                        text = "${(if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice).toInt()} $selectedCurrency x${item.quantity}",
                                         fontSize = 13.sp,
                                         color = Color.Gray,
                                         modifier = Modifier.weight(1.2f),
                                         textAlign = TextAlign.Center
                                     )
                                     Text(
-                                        text = "${((if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice) * item.quantity).toInt()} Ks",
+                                        text = "${((if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice) * item.quantity).toInt()} $selectedCurrency",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         color = Color.DarkGray,
@@ -6109,7 +6333,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("စုစုပေါင်း", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                                Text("${totalAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
+                                Text("${totalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
                             }
 
                             if (discountAmount > 0.0) {
@@ -6138,7 +6362,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             )
                                         }
                                     }
-                                    Text("-${discountAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
+                                    Text("-${discountAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
                                 }
                             }
 
@@ -6167,7 +6391,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             )
                                         }
                                     }
-                                    Text("+${feeAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
+                                    Text("+${feeAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
                                 }
                             }
 
@@ -6178,7 +6402,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("စုစုပေါင်းကျသင့်ငွေ", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                                Text("${finalAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
+                                Text("${finalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
                             }
 
                             Row(
@@ -6188,7 +6412,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("ပုံနှိပ်", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray)
+                                Text("ပို၍", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray)
                                 Switch(
                                     checked = printVoucher,
                                     onCheckedChange = { printVoucher = it },
@@ -6259,7 +6483,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text("Discount (လျော့စျေး)", fontSize = 13.sp, color = Color.DarkGray)
                                             }
-                                            Text("${discountAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandPurple)
+                                            Text("${discountAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandPurple)
                                         }
 
                                         Spacer(modifier = Modifier.height(12.dp))
@@ -6276,7 +6500,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text("Fee (ဝန်ဆောင်ခ)", fontSize = 13.sp, color = Color.DarkGray)
                                             }
-                                            Text("${feeAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.DarkGray)
+                                            Text("${feeAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.DarkGray)
                                         }
 
                                         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFF2F2F2))
@@ -6322,9 +6546,9 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 Icon(imageVector = Icons.Filled.Check, contentDescription = "Done", tint = Color.White)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 val buttonLabel = if (activePaymentMethod.equals("CREDIT", ignoreCase = true)) {
-                                    "Pay and Later ${finalAmount.toInt()} Ks"
+                                    "Pay and Later ${finalAmount.toInt()} $selectedCurrency"
                                 } else {
-                                    "ရှင်းမည် ${finalAmount.toInt()} Ks"
+                                    "ရှင်းမည် ${finalAmount.toInt()} $selectedCurrency"
                                 }
                                 Text(buttonLabel, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             }
@@ -6568,9 +6792,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                             .fillMaxWidth()
                             .padding(bottom = 16.dp)
                             .clickable {
-                                if (cart.isNotEmpty()) {
-                                    screenState = "voucher_detail"
-                                }
+                                screenState = "voucher_detail"
                             },
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         shape = RoundedCornerShape(16.dp),
@@ -6600,7 +6822,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                             
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "စုစုပေါင်း: ${totalAmount.toInt()} Ks",
+                                    text = "စုစုပေါင်း: ${totalAmount.toInt()} $selectedCurrency",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 16.sp,
                                     color = AppTextColor
@@ -6617,7 +6839,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 modifier = Modifier
                                     .size(36.dp)
                                     .background(
-                                        if (cart.isNotEmpty()) BrandPurple else Color(0xFFE8E7EC),
+                                        BrandPurple,
                                         shape = CircleShape
                                     ),
                                 contentAlignment = Alignment.Center
@@ -6625,7 +6847,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 Icon(
                                     imageVector = Icons.Filled.Check,
                                     contentDescription = "Confirm",
-                                    tint = if (cart.isNotEmpty()) Color.White else Color.Gray,
+                                    tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -6708,13 +6930,10 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .height(150.dp)
                                             .combinedClickable(
                                                 onClick = {
-                                                    if (cartItem == null) {
-                                                        viewModel.addToCart(prod)
-                                                    } else {
-                                                        viewModel.updateCartQuantity(prod.id, cartQty + 1)
-                                                    }
+                                                    tryAddToCart(prod)
                                                 },
                                                 onLongClick = {
                                                     val currentCart = viewModel.cart.value
@@ -6722,63 +6941,89 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                     val idx = if (existingIndex != -1) {
                                                         existingIndex
                                                     } else {
-                                                        viewModel.addToCart(prod)
-                                                        viewModel.cart.value.size - 1
+                                                        if (!isPurchaseMode && (prod.quantity <= 0 || (prod.trackStock && cartQty >= prod.quantity))) {
+                                                            showOutOfStockDialogFor = prod
+                                                            -1
+                                                        } else {
+                                                            viewModel.addToCart(prod)
+                                                            viewModel.cart.value.size - 1
+                                                        }
                                                     }
-                                                    val item = viewModel.cart.value.getOrNull(idx)
-                                                    if (item != null) {
-                                                        selectedCartItemIndex = idx
-                                                        tempQty = item.quantity
-                                                        asDifferentItem = false
-                                                        showAdvanced = false
-                                                        isNewCartItemPending = (existingIndex == -1)
-                                                        editCartItemReturnState = "select_products"
-                                                        screenState = "edit_cart_item"
+                                                    if (idx != -1) {
+                                                        val item = viewModel.cart.value.getOrNull(idx)
+                                                        if (item != null) {
+                                                            selectedCartItemIndex = idx
+                                                            tempQty = item.quantity
+                                                            asDifferentItem = false
+                                                            showAdvanced = false
+                                                            isNewCartItemPending = (existingIndex == -1)
+                                                            editCartItemReturnState = "select_products"
+                                                            screenState = "edit_cart_item"
+                                                        }
                                                     }
                                                 }
                                             ),
                                         elevation = CardDefaults.cardElevation(1.dp)
                                     ) {
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(12.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(40.dp)
-                                                    .background(Color(0xFFF2F0F7), shape = RoundedCornerShape(8.dp)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Layers,
-                                                    contentDescription = "Product icon",
-                                                    tint = BrandPurple,
-                                                    modifier = Modifier.size(20.dp)
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            if (prod.imageUri.isNotEmpty()) {
+                                                coil.compose.AsyncImage(
+                                                    model = prod.imageUri,
+                                                    contentDescription = prod.name,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                                 )
-                                            }
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(
-                                                text = prod.name,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 14.sp,
-                                                color = AppTextColor,
-                                                maxLines = 1,
-                                                textAlign = TextAlign.Center
-                                            )
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = "${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks",
-                                                fontSize = 12.sp,
-                                                color = Color.Gray
-                                            )
-                                            if (cartQty > 0) {
-                                                Spacer(modifier = Modifier.height(6.dp))
+                                            } else {
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(8.dp)
-                                                        .background(BrandPurple, shape = CircleShape)
+                                                        .fillMaxSize()
+                                                        .background(Color(0xFFD3C2FE)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Layers,
+                                                        contentDescription = "Product icon",
+                                                        tint = Color(0xFF533B78),
+                                                        modifier = Modifier.size(38.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            // Cart Quantity Badge on top-right if in cart
+                                            if (cartQty > 0) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .padding(6.dp)
+                                                        .background(BrandPurple, shape = RoundedCornerShape(12.dp))
+                                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "$cartQty",
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+
+                                            // Dark purple bottom bar showing item name only
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .align(Alignment.BottomCenter)
+                                                    .background(Color(0xFF533B78))
+                                                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = prod.name,
+                                                    fontWeight = FontWeight.Medium,
+                                                    fontSize = 13.sp,
+                                                    color = Color.White,
+                                                    textAlign = TextAlign.Center,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                         }
@@ -6803,11 +7048,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             .padding(vertical = 4.dp)
                                             .combinedClickable(
                                                 onClick = {
-                                                    if (cartItem == null) {
-                                                        viewModel.addToCart(prod)
-                                                    } else {
-                                                        viewModel.updateCartQuantity(prod.id, cartQty + 1)
-                                                    }
+                                                    tryAddToCart(prod)
                                                 },
                                                 onLongClick = {
                                                     val currentCart = viewModel.cart.value
@@ -6815,18 +7056,25 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                                     val idx = if (existingIndex != -1) {
                                                         existingIndex
                                                     } else {
-                                                        viewModel.addToCart(prod)
-                                                        viewModel.cart.value.size - 1
+                                                        if (!isPurchaseMode && (prod.quantity <= 0 || (prod.trackStock && cartQty >= prod.quantity))) {
+                                                            showOutOfStockDialogFor = prod
+                                                            -1
+                                                        } else {
+                                                            viewModel.addToCart(prod)
+                                                            viewModel.cart.value.size - 1
+                                                        }
                                                     }
-                                                    val item = viewModel.cart.value.getOrNull(idx)
-                                                    if (item != null) {
-                                                        selectedCartItemIndex = idx
-                                                        tempQty = item.quantity
-                                                        asDifferentItem = false
-                                                        showAdvanced = false
-                                                        isNewCartItemPending = (existingIndex == -1)
-                                                        editCartItemReturnState = "select_products"
-                                                        screenState = "edit_cart_item"
+                                                    if (idx != -1) {
+                                                        val item = viewModel.cart.value.getOrNull(idx)
+                                                        if (item != null) {
+                                                            selectedCartItemIndex = idx
+                                                            tempQty = item.quantity
+                                                            asDifferentItem = false
+                                                            showAdvanced = false
+                                                            isNewCartItemPending = (existingIndex == -1)
+                                                            editCartItemReturnState = "select_products"
+                                                            screenState = "edit_cart_item"
+                                                        }
                                                     }
                                                 }
                                             ),
@@ -6840,24 +7088,34 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(40.dp)
-                                                    .background(Color(0xFFE8E7EC), shape = RoundedCornerShape(8.dp)),
+                                                    .size(44.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color(0xFFE8E7EC)),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Layers,
-                                                    contentDescription = "Product icon",
-                                                    tint = BrandPurple,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
+                                                if (prod.imageUri.isNotEmpty()) {
+                                                    coil.compose.AsyncImage(
+                                                        model = prod.imageUri,
+                                                        contentDescription = prod.name,
+                                                        modifier = Modifier.fillMaxSize(),
+                                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Layers,
+                                                        contentDescription = "Product icon",
+                                                        tint = BrandPurple,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
                                             }
-                                            
+
                                             Spacer(modifier = Modifier.width(12.dp))
-                                            
+
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(prod.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AppTextColor)
                                                 Spacer(modifier = Modifier.height(4.dp))
-                                                Text("${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} Ks", fontSize = 13.sp, color = Color.Gray)
+                                                Text("${(if (isPurchaseMode) prod.purchasePrice else prod.sellingPrice).toInt()} $selectedCurrency", fontSize = 13.sp, color = Color.Gray)
                                             }
 
                                             if (cartQty > 0) {
@@ -7097,14 +7355,14 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 Text(item.product.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color.DarkGray)
                             }
                             Text(
-                                text = "${(if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice).toInt()} Ks x${item.quantity}",
+                                text = "${(if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice).toInt()} $selectedCurrency x${item.quantity}",
                                 fontSize = 13.sp,
                                 color = Color.Gray,
                                 modifier = Modifier.weight(1.2f),
                                 textAlign = TextAlign.Center
                             )
                             Text(
-                                text = "${((if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice) * item.quantity).toInt()} Ks",
+                                text = "${((if (isPurchaseMode) item.product.purchasePrice else item.product.sellingPrice) * item.quantity).toInt()} $selectedCurrency",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color.DarkGray,
@@ -7125,7 +7383,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("စုစုပေါင်း", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                        Text("${totalAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
+                        Text("${totalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
                     }
 
                     // Discount row (if any)
@@ -7155,7 +7413,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     )
                                 }
                             }
-                            Text("-${discountAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
+                            Text("-${discountAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
                         }
                     }
 
@@ -7185,7 +7443,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     )
                                 }
                             }
-                            Text("+${feeAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
+                            Text("+${feeAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
                         }
                     }
 
@@ -7197,7 +7455,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("စုစုပေါင်းကျသင့်ငွေ", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                        Text("${finalAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
+                        Text("${finalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = BrandPurple)
                     }
 
                     // Print switcher
@@ -7208,7 +7466,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("ပုံနှိပ်", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray)
+                        Text("ပို၍", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.DarkGray)
                         Switch(
                             checked = printVoucher,
                             onCheckedChange = { printVoucher = it },
@@ -7283,7 +7541,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text("Discount (လျော့စျေး)", fontSize = 13.sp, color = Color.DarkGray)
                                     }
-                                    Text("${discountAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandPurple)
+                                    Text("${discountAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = BrandPurple)
                                 }
                                 
                                 Spacer(modifier = Modifier.height(12.dp))
@@ -7301,7 +7559,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text("Fee (ဝန်ဆောင်ခ)", fontSize = 13.sp, color = Color.DarkGray)
                                     }
-                                    Text("${feeAmount.toInt()} Ks", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.DarkGray)
+                                    Text("${feeAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.DarkGray)
                                 }
                                 
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFFF2F2F2))
@@ -7349,9 +7607,9 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         Icon(imageVector = Icons.Filled.Check, contentDescription = "Done", tint = Color.White)
                         Spacer(modifier = Modifier.width(8.dp))
                         val buttonLabel = if (activePaymentMethod.equals("CREDIT", ignoreCase = true)) {
-                            "Pay and Later ${finalAmount.toInt()} Ks"
+                            "Pay and Later ${finalAmount.toInt()} $selectedCurrency"
                         } else {
-                            "ရှင်းမည် ${finalAmount.toInt()} Ks"
+                            "ရှင်းမည် ${finalAmount.toInt()} $selectedCurrency"
                         }
                         Text(buttonLabel, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
@@ -7745,7 +8003,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${numberFormat.format(currentTotal)} Ks",
+                        text = "${numberFormat.format(currentTotal)} $selectedCurrency",
                         fontSize = 32.sp,
                         fontWeight = FontWeight.Bold,
                         color = AppTextColor
@@ -7841,7 +8099,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     color = Color.DarkGray
                                 )
                                 Text(
-                                    text = "${numberFormat.format(remainingVal)} Ks",
+                                    text = "${numberFormat.format(remainingVal)} $selectedCurrency",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (remainingVal > 0) Color.Red else Color.DarkGray
@@ -7872,7 +8130,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     color = Color.DarkGray
                                 )
                                 Text(
-                                    text = "${numberFormat.format(creditChangeVal)} Ks",
+                                    text = "${numberFormat.format(creditChangeVal)} $selectedCurrency",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (creditChangeVal > 0) Color(0xFF4CAF50) else Color.DarkGray
@@ -7900,7 +8158,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     fontWeight = FontWeight.Bold,
                                     color = Color.DarkGray
                                 )
-                                val changeText = if (paidAmountString.isEmpty()) "0 Ks" else "${numberFormat.format(changeVal)} Ks"
+                                val changeText = if (paidAmountString.isEmpty()) "0 $selectedCurrency" else "${numberFormat.format(changeVal)} $selectedCurrency"
                                 Text(
                                     text = changeText,
                                     fontSize = 18.sp,
@@ -7924,7 +8182,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 val initialBalance = if (isCredit) (completedTotalAmount - paidVal).coerceAtLeast(0.0) else 0.0
                                 val initialChange = if (isCredit) (paidVal - completedTotalAmount).coerceAtLeast(0.0) else changeVal
                                 val initialNote = if (isCredit) {
-                                    "စုစုပေါင်း: ${numberFormat.format(completedTotalAmount.toInt())} Ks\nပေးငွေ: ${numberFormat.format(paidVal.toInt())} Ks\nကျန်ငွေ: ${numberFormat.format(initialBalance.toInt())} Ks"
+                                    "စုစုပေါင်း: ${numberFormat.format(completedTotalAmount.toInt())} $selectedCurrency\nပေးငွေ: ${numberFormat.format(paidVal.toInt())} $selectedCurrency\nကျန်ငွေ: ${numberFormat.format(initialBalance.toInt())} $selectedCurrency"
                                 } else ""
 
                                 viewModel.saveOrUpdateVoucher(
@@ -8546,7 +8804,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                 OutlinedTextField(
                     value = localDiscount,
                     onValueChange = { localDiscount = it },
-                    label = { Text("လျော့စျေးပမာဏ (Ks)") },
+                    label = { Text("လျော့စျေးပမာဏ ($selectedCurrency)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -8581,7 +8839,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                 OutlinedTextField(
                     value = localFee,
                     onValueChange = { localFee = it },
-                    label = { Text("ဝန်ဆောင်ခပမာဏ (Ks)") },
+                    label = { Text("ဝန်ဆောင်ခပမာဏ ($selectedCurrency)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -8728,7 +8986,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         OutlinedTextField(
                             value = localDiscount,
                             onValueChange = { newValue -> localDiscount = newValue.filter { it.isDigit() } },
-                            label = { Text("လျော့ဈေးပမာဏ (Ks)") },
+                            label = { Text("လျော့ဈေးပမာဏ ($selectedCurrency)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -8743,7 +9001,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         OutlinedTextField(
                             value = localFee,
                             onValueChange = { newValue -> localFee = newValue.filter { it.isDigit() } },
-                            label = { Text("ဝန်ဆောင်ခပမာဏ (Ks)") },
+                            label = { Text("ဝန်ဆောင်ခပမာဏ ($selectedCurrency)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
@@ -9234,6 +9492,7 @@ fun FilterDrawerContent(
 fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
     val vouchers by viewModel.allVouchers.collectAsState()
     val isPurchaseHistoryMode by viewModel.isPurchaseHistoryMode.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
     val calendar = remember { mutableStateOf(Calendar.getInstance()) }
     val filterMode = remember { mutableStateOf("month") }
     val selectedCustomer = remember { mutableStateOf<Customer?>(null) }
@@ -9338,7 +9597,7 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                             },
                             navigationIcon = {
                                 IconButton(onClick = { navController.popBackStack() }) {
-                                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black)
+                                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = BrandPurple)
                                 }
                             },
                             actions = {
@@ -9352,7 +9611,7 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                     Icon(
                                         imageVector = Icons.Filled.Person,
                                         contentDescription = "Customers Filter",
-                                        tint = Color.Black
+                                        tint = Color(0xFF1E88E5)
                                     )
                                 }
                                 
@@ -9366,14 +9625,14 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                     Icon(
                                         imageVector = Icons.Filled.Payments,
                                         contentDescription = "Payments Filter",
-                                        tint = Color.Black
+                                        tint = Color(0xFF00897B)
                                     )
                                 }
                                 
                                 // Calendar/Date Icon
                                 Box {
                                     IconButton(onClick = { showMenu.value = true }) {
-                                        Icon(imageVector = Icons.Filled.CalendarMonth, contentDescription = "Date/Month Filter", tint = Color.Black)
+                                        Icon(imageVector = Icons.Filled.CalendarMonth, contentDescription = "Date/Month Filter", tint = Color(0xFF5E35B1))
                                     }
                                     DropdownMenu(
                                         expanded = showMenu.value,
@@ -9477,6 +9736,7 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                 }
                             }
                         }
+                        
                         // Selected Customer / Selected Payment Filter Display Banner (Always positioned here consistently)
                         if (selectedCustomer.value != null || selectedPaymentMethod.value != null) {
                             Row(
@@ -9583,37 +9843,31 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                 .fillMaxWidth()
                         ) {
                             if (filteredVouchers.isEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center
+                                Column(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
                                 ) {
-                                    Column(
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center
+                                    Box(
+                                        modifier = Modifier
+                                            .size(100.dp)
+                                            .background(Color(0xFFEDE7F6), CircleShape),
+                                        contentAlignment = Alignment.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(100.dp)
-                                                .background(Color(0xFFEDE7F6), CircleShape),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.ReceiptLong,
-                                                contentDescription = "Empty",
-                                                modifier = Modifier.size(48.dp),
-                                                tint = BrandPurple
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(16.dp))
-                                        Text(
-                                            text = "No Receipts Found",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 16.sp,
-                                            color = Color.Gray
+                                        Icon(
+                                            imageVector = Icons.Filled.ReceiptLong,
+                                            contentDescription = "Empty",
+                                            modifier = Modifier.size(48.dp),
+                                            tint = BrandPurple
                                         )
                                     }
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = "No Receipts Found",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = Color.Gray
+                                    )
                                 }
                             } else {
                                 LazyColumn(
@@ -9696,7 +9950,7 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                                     
                                                     Column(horizontalAlignment = Alignment.End) {
                                                         Text(
-                                                            text = "${numberFormat.format(voucher.totalAmount.toInt())} Ks",
+                                                            text = "${numberFormat.format(voucher.totalAmount.toInt())} $selectedCurrency",
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 14.sp,
                                                             color = Color.Black
@@ -9748,7 +10002,7 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                                                     fontWeight = FontWeight.Medium
                                                                 )
                                                                 Text(
-                                                                    text = "${numberFormat.format((item.sellingPrice * item.quantity).toInt())} Ks",
+                                                                    text = "${numberFormat.format((item.sellingPrice * item.quantity).toInt())} $selectedCurrency",
                                                                     fontSize = 12.sp,
                                                                     fontWeight = FontWeight.Bold
                                                                 )
@@ -9833,7 +10087,7 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                     color = Color.Black
                                 )
                                 Text(
-                                    text = "${numberFormat.format(totalSum.toInt())} Ks",
+                                    text = "${numberFormat.format(totalSum.toInt())} $selectedCurrency",
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 20.sp,
                                     color = BrandPurple
@@ -9923,6 +10177,7 @@ fun getBluetoothDevices(context: Context): List<Pair<String, String>> {
 fun SettingListItem(
     icon: ImageVector,
     title: String,
+    iconColor: Color = BrandPurple,
     onClick: () -> Unit
 ) {
     Card(
@@ -9944,13 +10199,13 @@ fun SettingListItem(
                 Box(
                     modifier = Modifier
                         .size(40.dp)
-                        .background(color = Color(0xFFF2EFFF), shape = CircleShape),
+                        .background(color = iconColor.copy(alpha = 0.12f), shape = CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = title,
-                        tint = BrandPurple,
+                        tint = iconColor,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -9998,7 +10253,7 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
             try {
                 val db = com.example.data.AppDatabase.getDatabase(context)
                 try {
-                    db.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").moveToNext()
+                    db.openHelper.writableDatabase.execSQL("PRAGMA wal_checkpoint(FULL);")
                 } catch (_: Exception) {}
 
                 val dbFile = context.getDatabasePath("unpatch_pos_db")
@@ -10023,8 +10278,7 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
     ) { uri ->
         if (uri != null) {
             try {
-                val db = com.example.data.AppDatabase.getDatabase(context)
-                try { db.close() } catch (_: Exception) {}
+                com.example.data.AppDatabase.closeDatabase()
 
                 val dbFile = context.getDatabasePath("unpatch_pos_db")
                 val walFile = File(dbFile.path + "-wal")
@@ -10037,6 +10291,28 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                         input.copyTo(output)
                     }
                 }
+
+                // Inspect restored DB file to auto-recover user account phone into sharedPrefs
+                try {
+                    val sqliteDb = android.database.sqlite.SQLiteDatabase.openDatabase(
+                        dbFile.path,
+                        null,
+                        android.database.sqlite.SQLiteDatabase.OPEN_READWRITE
+                    )
+                    val cursor = sqliteDb.rawQuery("SELECT phoneNo FROM user_accounts ORDER BY id DESC LIMIT 1", null)
+                    if (cursor.moveToFirst()) {
+                        val restoredPhone = cursor.getString(0)
+                        if (!restoredPhone.isNullOrEmpty()) {
+                            sharedPrefs.edit()
+                                .putString("logged_in_phone", restoredPhone)
+                                .putString("last_registered_phone", restoredPhone)
+                                .apply()
+                        }
+                    }
+                    cursor.close()
+                    sqliteDb.close()
+                } catch (_: Exception) {}
+
                 Toast.makeText(context, "Database restore successful! Restarting app...", Toast.LENGTH_LONG).show()
                 val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
                 if (intent != null) {
@@ -10050,6 +10326,33 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
             } catch (e: Exception) {
                 Toast.makeText(context, "Restore failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    val importProductsLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val count = com.example.util.BackupAndExcelUtils.importProductsFromCSV(context, uri, viewModel)
+            Toast.makeText(context, "Excel Import Successful: $count products imported!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val importCustomersLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val count = com.example.util.BackupAndExcelUtils.importCustomersFromCSV(context, uri, viewModel)
+            Toast.makeText(context, "Excel Import Successful: $count customers imported!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    val importSuppliersLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val count = com.example.util.BackupAndExcelUtils.importSuppliersFromCSV(context, uri, viewModel)
+            Toast.makeText(context, "Excel Import Successful: $count suppliers imported!", Toast.LENGTH_LONG).show()
         }
     }
     
@@ -10217,6 +10520,8 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
         "table_mode" -> "Table Mode"
         "currency" -> "Currency"
         "database" -> "Database"
+        "excel_export" -> "Excel Export"
+        "excel_import" -> "Excel Import"
         "print_mode" -> "Print Mode"
         "choose_template" -> "Choose Template"
         "header_design" -> "Header Design"
@@ -10252,6 +10557,7 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                                 "add_receipt_printer", "add_kitchen_printer" -> currentSubScreen = "add_printer"
                                 "select_printer_device" -> currentSubScreen = "add_receipt_printer"
                                 "theme", "table_mode", "currency", "database" -> currentSubScreen = "main"
+                                "excel_export", "excel_import" -> currentSubScreen = "database"
                                 "print_mode", "choose_template" -> currentSubScreen = "print_settings"
                                 "header_design" -> {
                                     if (isAddingHeader || editingHeaderIndexForText != null) {
@@ -10372,16 +10678,19 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                         SettingListItem(
                             icon = Icons.Default.Print,
                             title = "Print Settings",
+                            iconColor = Color(0xFF1E88E5),
                             onClick = { currentSubScreen = "print_settings" }
                         )
                         SettingListItem(
                             icon = Icons.Default.AttachMoney,
                             title = "Currency",
+                            iconColor = Color(0xFF4CAF50),
                             onClick = { currentSubScreen = "currency" }
                         )
                         SettingListItem(
                             icon = Icons.Default.Storage,
                             title = "Database",
+                            iconColor = Color(0xFFFB8C00),
                             onClick = { currentSubScreen = "database" }
                         )
                     }
@@ -10394,8 +10703,18 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         SettingListItem(
+                            icon = Icons.Default.Folder,
+                            title = "Auto Daily Backup (UNMobilePos)",
+                            iconColor = Color(0xFF4CAF50),
+                            onClick = {
+                                val result = com.example.util.BackupAndExcelUtils.performAutoDailyBackup(context)
+                                Toast.makeText(context, result, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                        SettingListItem(
                             icon = Icons.Default.Backup,
-                            title = "Database Backup",
+                            title = "Database Backup (.db)",
+                            iconColor = Color(0xFF1E88E5),
                             onClick = {
                                 val fileName = "unpatch_pos_backup_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.db"
                                 backupLauncher.launch(fileName)
@@ -10403,9 +10722,127 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                         )
                         SettingListItem(
                             icon = Icons.Default.Restore,
-                            title = "Database Restore",
+                            title = "Database Restore (.db)",
+                            iconColor = Color(0xFFE53935),
                             onClick = {
                                 showRestoreConfirmDialog = true
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.Share,
+                            title = "Excel Export",
+                            iconColor = Color(0xFF2E7D32),
+                            onClick = {
+                                currentSubScreen = "excel_export"
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.List,
+                            title = "Excel Import",
+                            iconColor = Color(0xFF1565C0),
+                            onClick = {
+                                currentSubScreen = "excel_import"
+                            }
+                        )
+                    }
+                }
+                "excel_export" -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        SettingListItem(
+                            icon = Icons.Default.Folder,
+                            title = "Export All to UNMobilePos/Excel Folder",
+                            iconColor = Color(0xFF00796B),
+                            onClick = {
+                                com.example.util.BackupAndExcelUtils.exportProductsToCSV(context, viewModel.allProducts.value)
+                                com.example.util.BackupAndExcelUtils.exportCustomersToCSV(context, viewModel.allCustomers.value)
+                                com.example.util.BackupAndExcelUtils.exportSuppliersToCSV(context, viewModel.allSuppliers.value)
+                                com.example.util.BackupAndExcelUtils.exportSalesToCSV(context, viewModel.allVouchers.value)
+                                com.example.util.BackupAndExcelUtils.exportExpensesToCSV(context, viewModel.allExpenses.value)
+                                Toast.makeText(context, "All data exported to UNMobilePos/Excel folder!", Toast.LENGTH_LONG).show()
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.ShoppingCart,
+                            title = "Export Products to Excel (CSV)",
+                            iconColor = Color(0xFF2E7D32),
+                            onClick = {
+                                val res = com.example.util.BackupAndExcelUtils.exportProductsToCSV(context, viewModel.allProducts.value)
+                                Toast.makeText(context, res, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.Person,
+                            title = "Export Customers to Excel (CSV)",
+                            iconColor = Color(0xFF1565C0),
+                            onClick = {
+                                val res = com.example.util.BackupAndExcelUtils.exportCustomersToCSV(context, viewModel.allCustomers.value)
+                                Toast.makeText(context, res, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.LocalShipping,
+                            title = "Export Suppliers to Excel (CSV)",
+                            iconColor = Color(0xFF8E24AA),
+                            onClick = {
+                                val res = com.example.util.BackupAndExcelUtils.exportSuppliersToCSV(context, viewModel.allSuppliers.value)
+                                Toast.makeText(context, res, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.Receipt,
+                            title = "Export Sales Vouchers to Excel (CSV)",
+                            iconColor = Color(0xFFE65100),
+                            onClick = {
+                                val res = com.example.util.BackupAndExcelUtils.exportSalesToCSV(context, viewModel.allVouchers.value)
+                                Toast.makeText(context, res, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.List,
+                            title = "Export Expenses to Excel (CSV)",
+                            iconColor = Color(0xFFD81B60),
+                            onClick = {
+                                val res = com.example.util.BackupAndExcelUtils.exportExpensesToCSV(context, viewModel.allExpenses.value)
+                                Toast.makeText(context, res, Toast.LENGTH_LONG).show()
+                            }
+                        )
+                    }
+                }
+                "excel_import" -> {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        SettingListItem(
+                            icon = Icons.Default.ShoppingCart,
+                            title = "Import Products from Excel (CSV)",
+                            iconColor = Color(0xFF2E7D32),
+                            onClick = {
+                                importProductsLauncher.launch(arrayOf("*/*"))
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.Person,
+                            title = "Import Customers from Excel (CSV)",
+                            iconColor = Color(0xFF1565C0),
+                            onClick = {
+                                importCustomersLauncher.launch(arrayOf("*/*"))
+                            }
+                        )
+                        SettingListItem(
+                            icon = Icons.Default.LocalShipping,
+                            title = "Import Suppliers from Excel (CSV)",
+                            iconColor = Color(0xFF8E24AA),
+                            onClick = {
+                                importSuppliersLauncher.launch(arrayOf("*/*"))
                             }
                         )
                     }
@@ -10418,16 +10855,16 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        SettingListItem(icon = Icons.Default.Add, title = "Add Printer") {
+                        SettingListItem(icon = Icons.Default.Add, title = "Add Printer", iconColor = Color(0xFF4CAF50)) {
                             currentSubScreen = "add_printer"
                         }
-                        SettingListItem(icon = Icons.Default.Description, title = "Print Mode") {
+                        SettingListItem(icon = Icons.Default.Description, title = "Print Mode", iconColor = Color(0xFF1E88E5)) {
                             currentSubScreen = "print_mode"
                         }
-                        SettingListItem(icon = Icons.Default.Layers, title = "Choose Template") {
+                        SettingListItem(icon = Icons.Default.Layers, title = "Choose Template", iconColor = Color(0xFF8E24AA)) {
                             currentSubScreen = "choose_template"
                         }
-                        SettingListItem(icon = Icons.Default.TextFields, title = "Header Design") {
+                        SettingListItem(icon = Icons.Default.TextFields, title = "Header Design", iconColor = Color(0xFF00897B)) {
                             currentSubScreen = "header_design"
                             if (viewModel.headerLines.value.isNotEmpty()) {
                                 selectedHeaderIndex = 0
@@ -10435,7 +10872,7 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                                 selectedHeaderIndex = null
                             }
                         }
-                        SettingListItem(icon = Icons.Default.Notes, title = "Footer Design") {
+                        SettingListItem(icon = Icons.Default.Notes, title = "Footer Design", iconColor = Color(0xFFFB8C00)) {
                             currentSubScreen = "footer_design"
                             if (viewModel.footerLines.value.isNotEmpty()) {
                                 selectedFooterIndex = 0
@@ -10443,25 +10880,25 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                                 selectedFooterIndex = null
                             }
                         }
-                        SettingListItem(icon = Icons.Default.Label, title = "Label Text") {
+                        SettingListItem(icon = Icons.Default.Label, title = "Label Text", iconColor = Color(0xFFE53935)) {
                             currentSubScreen = "label_text"
                         }
-                        SettingListItem(icon = Icons.Default.FormatSize, title = "Font Size") {
+                        SettingListItem(icon = Icons.Default.FormatSize, title = "Font Size", iconColor = Color(0xFF3F51B5)) {
                             currentSubScreen = "font_size"
                         }
-                        SettingListItem(icon = Icons.Default.SpaceBar, title = "Paper Spacing") {
+                        SettingListItem(icon = Icons.Default.SpaceBar, title = "Paper Spacing", iconColor = Color(0xFF00ACC1)) {
                             currentSubScreen = "paper_spacing"
                         }
-                        SettingListItem(icon = Icons.Default.KeyboardArrowDown, title = "Bottom Feed") {
+                        SettingListItem(icon = Icons.Default.KeyboardArrowDown, title = "Bottom Feed", iconColor = Color(0xFF7CB342)) {
                             currentSubScreen = "bottom_feed"
                         }
-                        SettingListItem(icon = Icons.Default.Receipt, title = "Print Receipt") {
+                        SettingListItem(icon = Icons.Default.Receipt, title = "Print Receipt", iconColor = Color(0xFFD81B60)) {
                             currentSubScreen = "print_receipt"
                         }
-                        SettingListItem(icon = Icons.Default.FormatLineSpacing, title = "Line Spacing") {
+                        SettingListItem(icon = Icons.Default.FormatLineSpacing, title = "Line Spacing", iconColor = Color(0xFFF57C00)) {
                             currentSubScreen = "line_spacing"
                         }
-                        SettingListItem(icon = Icons.Default.Settings, title = "Print Brightness (Print Mode 1)") {
+                        SettingListItem(icon = Icons.Default.Settings, title = "Print Brightness (Print Mode 1)", iconColor = Color(0xFF5E35B1)) {
                             currentSubScreen = "print_brightness"
                         }
                     }
@@ -11142,7 +11579,7 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                                     onClick = {
                                         viewModel.selectedCurrency.value = currencyInput
                                         android.widget.Toast.makeText(context, "Currency saved successfully!", android.widget.Toast.LENGTH_SHORT).show()
-                                        currentSubScreen = "print_settings"
+                                        currentSubScreen = "main"
                                     },
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -12906,6 +13343,7 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                     }
                         "font_size" -> {
                             val bodyFontSize by viewModel.receiptBodyFontSize.collectAsState()
+                            val selectedCurrency by viewModel.selectedCurrency.collectAsState()
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -12944,14 +13382,14 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text("Coffee (Ice)", color = Color.Black, fontSize = bodyFontSize.sp)
-                                                Text("1 x 1,500 Ks", color = Color.Black, fontSize = bodyFontSize.sp)
+                                                Text("1 x 1,500 $selectedCurrency", color = Color.Black, fontSize = bodyFontSize.sp)
                                             }
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text("French Fries", color = Color.Black, fontSize = bodyFontSize.sp)
-                                                Text("2 x 2,000 Ks", color = Color.Black, fontSize = bodyFontSize.sp)
+                                                Text("2 x 2,000 $selectedCurrency", color = Color.Black, fontSize = bodyFontSize.sp)
                                             }
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Divider(color = Color.LightGray, thickness = 1.dp)
@@ -12960,7 +13398,7 @@ fun SettingsScreen(navController: NavController, viewModel: POSViewModel) {
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
                                                 Text("Total", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = bodyFontSize.sp)
-                                                Text("5,500 Ks", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = bodyFontSize.sp)
+                                                Text("5,500 $selectedCurrency", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = bodyFontSize.sp)
                                             }
                                         }
                                     }
@@ -15872,6 +16310,7 @@ fun ReceiptDetailScreen(navController: NavController, viewModel: POSViewModel, r
     val vouchers by viewModel.allVouchers.collectAsState()
     val voucher = vouchers.find { it.receiptNo == receiptNo }
     val items by viewModel.getVoucherItemsFlow(receiptNo).collectAsState(initial = emptyList())
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -15934,7 +16373,7 @@ fun ReceiptDetailScreen(navController: NavController, viewModel: POSViewModel, r
                 Spacer(modifier = Modifier.height(8.dp))
                 
                 Text(
-                    text = "${numberFormat.format(voucher.totalAmount.toInt())} Ks",
+                    text = "${numberFormat.format(voucher.totalAmount.toInt())} $selectedCurrency",
                     fontSize = 36.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.Black
@@ -16032,13 +16471,13 @@ fun ReceiptDetailScreen(navController: NavController, viewModel: POSViewModel, r
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "${numberFormat.format(item.sellingPrice.toInt())} Ks x${item.quantity}",
+                                    text = "${numberFormat.format(item.sellingPrice.toInt())} $selectedCurrency x${item.quantity}",
                                     fontSize = 13.sp,
                                     color = Color.Gray
                                 )
                             }
                             Text(
-                                text = "${numberFormat.format((item.sellingPrice * item.quantity).toInt())} Ks",
+                                text = "${numberFormat.format((item.sellingPrice * item.quantity).toInt())} $selectedCurrency",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = Color.Black
@@ -16066,7 +16505,7 @@ fun ReceiptDetailScreen(navController: NavController, viewModel: POSViewModel, r
                         color = Color.Black
                     )
                     Text(
-                        text = "${numberFormat.format(voucher.totalAmount.toInt())} Ks",
+                        text = "${numberFormat.format(voucher.totalAmount.toInt())} $selectedCurrency",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.Black
@@ -16230,6 +16669,7 @@ fun SalesCalendarScreen(navController: NavController, viewModel: POSViewModel) {
 
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
     val todayString = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     val days = remember(year, month) {
         val calendar = Calendar.getInstance().apply {
@@ -16437,7 +16877,7 @@ fun SalesCalendarScreen(navController: NavController, viewModel: POSViewModel) {
                                         ) {
                                             val amountColor = if (day.isCurrentMonth) BrandPurple else Color.LightGray
                                             Text(
-                                                text = "${numberFormat.format(totalAmount.toInt())} Ks",
+                                                text = "${numberFormat.format(totalAmount.toInt())} $selectedCurrency",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = amountColor,
@@ -16493,7 +16933,7 @@ fun SalesCalendarScreen(navController: NavController, viewModel: POSViewModel) {
                         color = Color.Black
                     )
                     Text(
-                        text = "${numberFormat.format(monthlyTotal.toInt())} Ks",
+                        text = "${numberFormat.format(monthlyTotal.toInt())} $selectedCurrency",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = BrandPurple
@@ -16510,6 +16950,7 @@ fun SalesMonthSelectorScreen(navController: NavController, viewModel: POSViewMod
     val vouchers by viewModel.allVouchers.collectAsState()
     val year by viewModel.calendarYear.collectAsState()
     val isPurchaseHistoryMode by viewModel.isPurchaseHistoryMode.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
 
@@ -16657,7 +17098,7 @@ fun SalesMonthSelectorScreen(navController: NavController, viewModel: POSViewMod
 
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = "${numberFormat.format(totalAmount.toInt())} Ks",
+                                    text = "${numberFormat.format(totalAmount.toInt())} $selectedCurrency",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF673AB7)
@@ -16688,6 +17129,7 @@ fun SalesMonthSelectorScreen(navController: NavController, viewModel: POSViewMod
 @Composable
 fun SalesDailyReceiptsScreen(navController: NavController, viewModel: POSViewModel, dateMillis: Long) {
     val vouchers by viewModel.allVouchers.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
     val selectedDate = remember { mutableStateOf(Calendar.getInstance().apply { timeInMillis = dateMillis }) }
 
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
@@ -16785,7 +17227,7 @@ fun SalesDailyReceiptsScreen(navController: NavController, viewModel: POSViewMod
                             },
                             navigationIcon = {
                                 IconButton(onClick = { navController.popBackStack() }) {
-                                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = Color.Black)
+                                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = BrandPurple)
                                 }
                             },
                             actions = {
@@ -16799,7 +17241,7 @@ fun SalesDailyReceiptsScreen(navController: NavController, viewModel: POSViewMod
                                     Icon(
                                         imageVector = Icons.Filled.Person,
                                         contentDescription = "Customers Filter",
-                                        tint = Color.Black
+                                        tint = Color(0xFF1E88E5)
                                     )
                                 }
                                 
@@ -16813,7 +17255,7 @@ fun SalesDailyReceiptsScreen(navController: NavController, viewModel: POSViewMod
                                     Icon(
                                         imageVector = Icons.Filled.Payments,
                                         contentDescription = "Payments Filter",
-                                        tint = Color.Black
+                                        tint = Color(0xFF00897B)
                                     )
                                 }
                             },
@@ -16996,7 +17438,7 @@ fun SalesDailyReceiptsScreen(navController: NavController, viewModel: POSViewMod
                                                     
                                                     Column(horizontalAlignment = Alignment.End) {
                                                         Text(
-                                                            text = "${numberFormat.format(voucher.totalAmount.toInt())} Ks",
+                                                            text = "${numberFormat.format(voucher.totalAmount.toInt())} $selectedCurrency",
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 14.sp,
                                                             color = Color.Black
@@ -17052,7 +17494,7 @@ fun SalesDailyReceiptsScreen(navController: NavController, viewModel: POSViewMod
                                     color = Color.Black
                                 )
                                 Text(
-                                    text = "${numberFormat.format(dailyTotal.toInt())} Ks",
+                                    text = "${numberFormat.format(dailyTotal.toInt())} $selectedCurrency",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
                                     color = BrandPurple
@@ -17070,6 +17512,7 @@ fun SalesDailyReceiptsScreen(navController: NavController, viewModel: POSViewMod
 @Composable
 fun CustomerDebtScreen(navController: NavController, viewModel: POSViewModel) {
     val vouchers by viewModel.allVouchers.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
 
     // Filter completed sales credit vouchers
@@ -17123,7 +17566,7 @@ fun CustomerDebtScreen(navController: NavController, viewModel: POSViewModel) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "စုစုပေါင်းရရန်ရှိငွေ: ${numberFormat.format(totalAllDebt.toInt())} Ks",
+                        text = "စုစုပေါင်းရရန်ရှိငွေ: ${numberFormat.format(totalAllDebt.toInt())} $selectedCurrency",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = Color(0xFFD32F2F)
@@ -17205,7 +17648,7 @@ fun CustomerDebtScreen(navController: NavController, viewModel: POSViewModel) {
                             }
 
                             Text(
-                                text = "${numberFormat.format(totalDebt.toInt())} Ks",
+                                text = "${numberFormat.format(totalDebt.toInt())} $selectedCurrency",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFFE53935)
@@ -17222,6 +17665,7 @@ fun CustomerDebtScreen(navController: NavController, viewModel: POSViewModel) {
 @Composable
 fun CustomerDebtDetailScreen(navController: NavController, viewModel: POSViewModel, name: String) {
     val vouchers by viewModel.allVouchers.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
 
     // Filter credit vouchers for this customer
@@ -17258,7 +17702,7 @@ fun CustomerDebtDetailScreen(navController: NavController, viewModel: POSViewMod
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "လက်ကျန်ငွေ: ${numberFormat.format(selectedVoucher!!.balanceAmount.toInt())} Ks",
+                        text = "လက်ကျန်ငွေ: ${numberFormat.format(selectedVoucher!!.balanceAmount.toInt())} $selectedCurrency",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFFD32F2F)
@@ -17271,7 +17715,7 @@ fun CustomerDebtDetailScreen(navController: NavController, viewModel: POSViewMod
                                 repayAmountString = newValue
                             }
                         },
-                        label = { Text("သွင်းငွေ ပမာဏ (Ks)") },
+                        label = { Text("သွင်းငွေ ပမာဏ ($selectedCurrency)") },
                         singleLine = true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
@@ -17291,7 +17735,7 @@ fun CustomerDebtDetailScreen(navController: NavController, viewModel: POSViewMod
                             val newPaid = voucherToUpdate.paidAmount + actualRepay
                             
                             val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.US).format(Date())
-                            val appendNote = "ငွေဆပ်: ${numberFormat.format(actualRepay.toInt())} Ks ($todayStr)\nကျန်ငွေ: ${numberFormat.format(newBalance.toInt())} Ks"
+                            val appendNote = "ငွေဆပ်: ${numberFormat.format(actualRepay.toInt())} $selectedCurrency ($todayStr)\nကျန်ငွေ: ${numberFormat.format(newBalance.toInt())} $selectedCurrency"
                             val updatedVoucher = voucherToUpdate.copy(
                                 balanceAmount = newBalance,
                                 paidAmount = newPaid,
@@ -17418,7 +17862,7 @@ fun CustomerDebtDetailScreen(navController: NavController, viewModel: POSViewMod
 
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        text = "${numberFormat.format(voucher.balanceAmount.toInt())} Ks",
+                                        text = "${numberFormat.format(voucher.balanceAmount.toInt())} $selectedCurrency",
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFE53935)
@@ -17517,6 +17961,7 @@ fun CustomerDebtDetailScreen(navController: NavController, viewModel: POSViewMod
 @Composable
 fun SupplierDebtScreen(navController: NavController, viewModel: POSViewModel) {
     val vouchers by viewModel.allVouchers.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
 
     // Filter completed purchase credit vouchers
@@ -17570,7 +18015,7 @@ fun SupplierDebtScreen(navController: NavController, viewModel: POSViewModel) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "စုစုပေါင်းပေးရန်ရှိငွေ: -${numberFormat.format(totalAllDebt.toInt())} Ks",
+                        text = "စုစုပေါင်းပေးရန်ရှိငွေ: -${numberFormat.format(totalAllDebt.toInt())} $selectedCurrency",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = Color(0xFFD32F2F)
@@ -17652,7 +18097,7 @@ fun SupplierDebtScreen(navController: NavController, viewModel: POSViewModel) {
                             }
 
                             Text(
-                                text = "-${numberFormat.format(totalDebt.toInt())} Ks",
+                                text = "-${numberFormat.format(totalDebt.toInt())} $selectedCurrency",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFFE53935)
@@ -17669,6 +18114,7 @@ fun SupplierDebtScreen(navController: NavController, viewModel: POSViewModel) {
 @Composable
 fun SupplierDebtDetailScreen(navController: NavController, viewModel: POSViewModel, name: String) {
     val vouchers by viewModel.allVouchers.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
     val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
 
     // Filter credit vouchers for this supplier
@@ -17705,7 +18151,7 @@ fun SupplierDebtDetailScreen(navController: NavController, viewModel: POSViewMod
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "လက်ကျန်ပေးရန်ရှိငွေ: ${numberFormat.format(selectedVoucher!!.balanceAmount.toInt())} Ks",
+                        text = "လက်ကျန်ပေးရန်ရှိငွေ: ${numberFormat.format(selectedVoucher!!.balanceAmount.toInt())} $selectedCurrency",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color(0xFFD32F2F)
@@ -17718,7 +18164,7 @@ fun SupplierDebtDetailScreen(navController: NavController, viewModel: POSViewMod
                                 repayAmountString = newValue
                             }
                         },
-                        label = { Text("သွင်းငွေ ပမာဏ (Ks)") },
+                        label = { Text("သွင်းငွေ ပမာဏ ($selectedCurrency)") },
                         singleLine = true,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
@@ -17738,7 +18184,7 @@ fun SupplierDebtDetailScreen(navController: NavController, viewModel: POSViewMod
                             val newPaid = voucherToUpdate.paidAmount + actualRepay
                             
                             val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.US).format(Date())
-                            val appendNote = "ငွေချေ: ${numberFormat.format(actualRepay.toInt())} Ks ($todayStr)\nကျန်ငွေ: ${numberFormat.format(newBalance.toInt())} Ks"
+                            val appendNote = "ငွေချေ: ${numberFormat.format(actualRepay.toInt())} $selectedCurrency ($todayStr)\nကျန်ငွေ: ${numberFormat.format(newBalance.toInt())} $selectedCurrency"
                             val updatedVoucher = voucherToUpdate.copy(
                                 balanceAmount = newBalance,
                                 paidAmount = newPaid,
@@ -17865,7 +18311,7 @@ fun SupplierDebtDetailScreen(navController: NavController, viewModel: POSViewMod
 
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        text = "${numberFormat.format(voucher.balanceAmount.toInt())} Ks",
+                                        text = "${numberFormat.format(voucher.balanceAmount.toInt())} $selectedCurrency",
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFE53935)
@@ -18058,10 +18504,12 @@ fun SalesProductTotalScreen(
 ) {
     val vouchers by viewModel.allVouchers.collectAsState()
     val voucherItems by viewModel.allVoucherItems.collectAsState()
+    val expenses by viewModel.allExpenses.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
+    val numberFormat = remember { NumberFormat.getNumberInstance(Locale.US) }
 
-    // Default: first day of current month to today
+    // Default: current month (1st day of month to last day of month)
     val calendar = remember { Calendar.getInstance() }
-    val todayMillis = calendar.timeInMillis
     val firstDayOfMonthMillis = remember {
         val cal = Calendar.getInstance()
         cal.set(Calendar.DAY_OF_MONTH, 1)
@@ -18071,9 +18519,18 @@ fun SalesProductTotalScreen(
         cal.set(Calendar.MILLISECOND, 0)
         cal.timeInMillis
     }
+    val lastDayOfMonthMillis = remember {
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.DAY_OF_MONTH, cal.getActualMaximum(Calendar.DAY_OF_MONTH))
+        cal.set(Calendar.HOUR_OF_DAY, 23)
+        cal.set(Calendar.MINUTE, 59)
+        cal.set(Calendar.SECOND, 59)
+        cal.set(Calendar.MILLISECOND, 999)
+        cal.timeInMillis
+    }
 
     var startDate by remember { mutableStateOf(firstDayOfMonthMillis) }
-    var endDate by remember { mutableStateOf(todayMillis) }
+    var endDate by remember { mutableStateOf(lastDayOfMonthMillis) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale.US) }
@@ -18093,6 +18550,35 @@ fun SalesProductTotalScreen(
         voucherItems.filter { it.voucherId in completedVoucherIds }
     }
 
+    val filteredExpenses = remember(expenses, startDate, endDate) {
+        expenses.filter { it.timestamp in startDate..endDate }
+    }
+
+    // Key Summary Metrics
+    val totalSales = remember(completedSalesVouchers) {
+        completedSalesVouchers.sumOf { it.totalAmount }
+    }
+
+    val totalDiscount = remember(completedSalesVouchers, filteredItems) {
+        completedSalesVouchers.sumOf { v ->
+            val itemsForV = filteredItems.filter { it.voucherId == v.receiptNo }
+            val itemsTotal = itemsForV.sumOf { it.quantity * it.sellingPrice }
+            (itemsTotal - v.totalAmount).coerceAtLeast(0.0)
+        }
+    }
+
+    val totalExpenses = remember(filteredExpenses) {
+        filteredExpenses.sumOf { it.amount }
+    }
+
+    val totalGrossProfit = remember(filteredItems) {
+        filteredItems.sumOf { (it.sellingPrice - it.purchasePrice) * it.quantity }
+    }
+
+    val totalNetProfit = remember(totalGrossProfit, totalDiscount, totalExpenses) {
+        totalGrossProfit - totalDiscount - totalExpenses
+    }
+
     val productSalesList = remember(filteredItems, isQuantityMode) {
         filteredItems.groupBy { it.productName }
             .map { (productName, items) ->
@@ -18110,12 +18596,78 @@ fun SalesProductTotalScreen(
             .sortedByDescending { if (isQuantityMode) it.quantity.toDouble() else it.totalAmount }
     }
 
+    // Generate daily chart data points
+    val chartPoints = remember(completedSalesVouchers, filteredItems, filteredExpenses, startDate, endDate) {
+        val points = mutableListOf<SalesChartPoint>()
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = startDate
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val endCal = Calendar.getInstance().apply {
+            timeInMillis = endDate
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+
+        val dayFormatter = SimpleDateFormat("dd/MM", Locale.US)
+
+        while (!cal.after(endCal)) {
+            val pStart = cal.timeInMillis
+            val pEnd = Calendar.getInstance().apply {
+                timeInMillis = pStart
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+                set(Calendar.MILLISECOND, 999)
+            }.timeInMillis
+
+            val pVouchers = completedSalesVouchers.filter { it.timestamp in pStart..pEnd }
+            val pVIds = pVouchers.map { it.receiptNo }.toSet()
+            val pItems = filteredItems.filter { it.voucherId in pVIds }
+            val pExpenses = filteredExpenses.filter { it.timestamp in pStart..pEnd }
+
+            val pSales = pVouchers.sumOf { it.totalAmount }
+            val pDiscount = pVouchers.sumOf { v ->
+                val itemsForV = pItems.filter { it.voucherId == v.receiptNo }
+                val itemsTotal = itemsForV.sumOf { it.quantity * it.sellingPrice }
+                (itemsTotal - v.totalAmount).coerceAtLeast(0.0)
+            }
+            val pExp = pExpenses.sumOf { it.amount }
+            val pGrossProfit = pItems.sumOf { (it.sellingPrice - it.purchasePrice) * it.quantity }
+            val pNetProfit = (pGrossProfit - pDiscount - pExp).coerceAtLeast(0.0)
+
+            val label = dayFormatter.format(cal.time)
+            points.add(
+                SalesChartPoint(
+                    dateLabel = label,
+                    sales = pSales,
+                    discount = pDiscount,
+                    expenses = pExp,
+                    profit = pNetProfit
+                )
+            )
+
+            cal.add(Calendar.DAY_OF_YEAR, 1)
+        }
+
+        if (points.isEmpty()) {
+            listOf(SalesChartPoint("01/01", 0.0, 0.0, 0.0, 0.0))
+        } else {
+            points
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = if (isQuantityMode) "ကုန်ပစ္စည်းအလိုက်အရောင်း (အရေအတွက်)" else "ကုန်ပစ္စည်းအလိုက်အရောင်း (တန်ဖိုး)",
+                        text = if (isQuantityMode) "ကုန်ပစ္စည်းအလိုက်အရောင်း (အရေအတွက်)" else "အရောင်းအနှစ်ချုပ်",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = AppTextColor
@@ -18129,7 +18681,7 @@ fun SalesProductTotalScreen(
                 actions = {
                     IconButton(onClick = { showDatePicker = true }) {
                         Icon(
-                            imageVector = Icons.Filled.DateRange,
+                            imageVector = Icons.Filled.CalendarMonth,
                             contentDescription = "Select Date Range",
                             tint = BrandPurple
                         )
@@ -18139,7 +18691,7 @@ fun SalesProductTotalScreen(
             )
         },
         bottomBar = {
-            if (productSalesList.isNotEmpty()) {
+            if (isQuantityMode && productSalesList.isNotEmpty()) {
                 Surface(
                     tonalElevation = 8.dp,
                     shadowElevation = 8.dp,
@@ -18173,7 +18725,7 @@ fun SalesProductTotalScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "${String.format("%,.0f", productSalesList.sumOf { it.totalAmount })} Ks",
+                                text = "${numberFormat.format(productSalesList.sumOf { it.totalAmount }.toInt())} $selectedCurrency",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = BrandPurple,
@@ -18192,8 +18744,9 @@ fun SalesProductTotalScreen(
                 .fillMaxSize()
                 .background(Color(0xFFFAF9FD))
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
         ) {
-            // Date Range under ActionBar
+            // Date Range Bar under TopBar
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 shape = RoundedCornerShape(0.dp),
@@ -18213,7 +18766,7 @@ fun SalesProductTotalScreen(
                             imageVector = Icons.Filled.DateRange,
                             contentDescription = null,
                             tint = Color.Gray,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -18227,103 +18780,382 @@ fun SalesProductTotalScreen(
                         imageVector = Icons.Filled.ChevronRight,
                         contentDescription = "Edit Date Range",
                         tint = Color.Gray,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
 
-            // Header row: ကုန်စည်အမည် | အရေအတွက် | စုစုပေါင်း
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFEFEBF9))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "ကုန်စည်အမည်",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = AppTextColor,
-                    modifier = Modifier.weight(2f)
-                )
-                Text(
-                    text = "အရေအတွက်",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = AppTextColor,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = "စုစုပေါင်း",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = AppTextColor,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.weight(1.5f)
-                )
-            }
+            if (!isQuantityMode) {
+                Spacer(modifier = Modifier.height(12.dp))
 
-            if (productSalesList.isEmpty()) {
-                Box(
+                // Top 3 Metric Cards: စုစုပေါင်းအရောင်း | Discount | အသုံးစရိတ်
+                Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
-                    contentAlignment = Alignment.Center
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("ရောင်းအားမှတ်တမ်း မရှိသေးပါ", color = Color.Gray, fontSize = 15.sp)
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f)
-                ) {
-                    items(productSalesList) { item ->
+                    // Card 1: စုစုပေါင်းအရောင်း
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EFFF)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    navController.navigate("sales_product_detail/${Uri.encode(item.productName)}/$startDate/$endDate")
-                                }
-                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.Start
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color(0xFFE2D6F8), CircleShape),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = item.productName,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = AppTextColor,
-                                    modifier = Modifier.weight(2f)
-                                )
-                                Text(
-                                    text = "${item.quantity}",
-                                    fontSize = 15.sp,
-                                    color = AppTextColor,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = "${String.format("%,.0f", item.totalAmount)} Ks",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = AppTextColor,
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1.5f)
+                                Icon(
+                                    imageVector = Icons.Filled.ShoppingCart,
+                                    contentDescription = null,
+                                    tint = Color(0xFF5E35B1),
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            HorizontalDivider(
-                                modifier = Modifier.padding(top = 12.dp),
-                                color = Color(0xFFF0EDF7)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "စုစုပေါင်းအရောင်း",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.DarkGray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${numberFormat.format(totalSales.toInt())} $selectedCurrency",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AppTextColor
+                            )
+                        }
+                    }
+
+                    // Card 2: Discount
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E8)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color(0xFFFFE1C4), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.LocalOffer,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFB8C00),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Discount",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.DarkGray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${numberFormat.format(totalDiscount.toInt())} $selectedCurrency",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AppTextColor
+                            )
+                        }
+                    }
+
+                    // Card 3: အသုံးစရိတ်
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEDF4FE)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(Color(0xFFD3E5FD), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.AccountBalanceWallet,
+                                    contentDescription = null,
+                                    tint = Color(0xFF1E88E5),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "အသုံးစရိတ်",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.DarkGray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${numberFormat.format(totalExpenses.toInt())} $selectedCurrency",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AppTextColor
                             )
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Middle 2 Metric Cards: စုစုပေါင်းအမြတ် | အသားတင်အမြတ်
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Card 4: စုစုပေါင်းအမြတ်
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F8E9)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(Color(0xFFC8E6C9), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.TrendingUp,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2E7D32),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "စုစုပေါင်းအမြတ်",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.DarkGray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${numberFormat.format(totalGrossProfit.toInt())} $selectedCurrency",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AppTextColor
+                            )
+                        }
+                    }
+
+                    // Card 5: အသားတင်အမြတ်
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F8EE)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .background(Color(0xFFA5D6A7), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF388E3C),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "အသားတင်အမြတ်",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.DarkGray
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${numberFormat.format(totalNetProfit.toInt())} $selectedCurrency",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2E7D32)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Chart Section
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = "အရောင်းအချက်အလက် (နေ့စဉ်)",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AppTextColor
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Chart Legends Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            LegendItem(color = Color(0xFF673AB7), label = "အရောင်း")
+                            LegendItem(color = Color(0xFFFB8C00), label = "Discount")
+                            LegendItem(color = Color(0xFF1E88E5), label = "အသုံးစရိတ်")
+                            LegendItem(color = Color(0xFF4CAF50), label = "အမြတ်")
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Daily Bar Chart Component
+                        SalesDailyGroupedBarChart(chartPoints = chartPoints)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
+
+            if (isQuantityMode) {
+                // Product Sales Breakdown Header & List (Full width like CustomerSalesReportScreen)
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFFEFEBF9))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "ကုန်စည်အမည်",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = AppTextColor,
+                            modifier = Modifier.weight(2f)
+                        )
+                        Text(
+                            text = "အရေအတွက်",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = AppTextColor,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "စုစုပေါင်း",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = AppTextColor,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.weight(1.5f)
+                        )
+                    }
+
+                    if (productSalesList.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("ရောင်းအားမှတ်တမ်း မရှိသေးပါ", color = Color.Gray, fontSize = 15.sp)
+                        }
+                    } else {
+                        productSalesList.forEach { item ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.White)
+                                    .clickable {
+                                        navController.navigate("sales_product_detail/${Uri.encode(item.productName)}/$startDate/$endDate")
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = item.productName,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = AppTextColor,
+                                        modifier = Modifier.weight(2f)
+                                    )
+                                    Text(
+                                        text = "${item.quantity}",
+                                        fontSize = 15.sp,
+                                        color = AppTextColor,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${numberFormat.format(item.totalAmount.toInt())} $selectedCurrency",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = AppTextColor,
+                                        textAlign = TextAlign.End,
+                                        modifier = Modifier.weight(1.5f)
+                                    )
+                                }
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(top = 12.dp),
+                                    color = Color(0xFFF0EDF7)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 
@@ -18344,7 +19176,6 @@ fun SalesProductTotalScreen(
                         set(java.util.Calendar.SECOND, 0)
                         set(java.util.Calendar.MILLISECOND, 0)
                     }
-                    startDate = localStartCal.timeInMillis
 
                     val utcEndCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
                         timeInMillis = end
@@ -18358,10 +19189,191 @@ fun SalesProductTotalScreen(
                         set(java.util.Calendar.SECOND, 59)
                         set(java.util.Calendar.MILLISECOND, 999)
                     }
+
+                    startDate = localStartCal.timeInMillis
                     endDate = localEndCal.timeInMillis
                 }
+                showDatePicker = false
             }
         )
+    }
+}
+
+private data class SalesChartPoint(
+    val dateLabel: String,
+    val sales: Double,
+    val discount: Double,
+    val expenses: Double,
+    val profit: Double
+)
+
+@Composable
+private fun LegendItem(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .background(color, CircleShape)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.DarkGray
+        )
+    }
+}
+
+@Composable
+private fun SalesDailyGroupedBarChart(chartPoints: List<SalesChartPoint>) {
+    val maxVal = remember(chartPoints) {
+        chartPoints.flatMap { listOf(it.sales, it.discount, it.expenses, it.profit) }
+            .maxOrNull()?.coerceAtLeast(100.0) ?: 100.0
+    }
+
+    val yLabels = remember(maxVal) {
+        val step = maxVal / 4.0
+        listOf(
+            maxVal,
+            step * 3,
+            step * 2,
+            step * 1,
+            0.0
+        )
+    }
+
+    fun formatShort(v: Double): String {
+        return when {
+            v >= 1_000_000 -> "${(v / 1_000_000).toInt()}M"
+            v >= 1_000 -> "${(v / 1_000).toInt()}K"
+            else -> "${v.toInt()}"
+        }
+    }
+
+    val scrollState = rememberScrollState()
+    LaunchedEffect(chartPoints) {
+        if (chartPoints.isNotEmpty()) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+        ) {
+            // Y-Axis Labels Column
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(40.dp)
+                    .padding(bottom = 20.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.End
+            ) {
+                yLabels.forEach { labelVal ->
+                    Text(
+                        text = formatShort(labelVal),
+                        fontSize = 10.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Bars Grid Area
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+            ) {
+                // Horizontal grid lines
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = 20.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    repeat(5) {
+                        HorizontalDivider(
+                            color = Color(0xFFEEEEEE),
+                            thickness = 1.dp
+                        )
+                    }
+                }
+
+                // Grouped Bars for each date point
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .horizontalScroll(scrollState),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    chartPoints.forEach { point ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Bottom,
+                            modifier = Modifier.fillMaxHeight()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(bottom = 4.dp)
+                            ) {
+                                // Sales Bar (Purple)
+                                val sHeight = ((point.sales / maxVal).toFloat() * 120).coerceIn(0f, 120f)
+                                Box(
+                                    modifier = Modifier
+                                        .width(5.dp)
+                                        .height(sHeight.dp.coerceAtLeast(2.dp))
+                                        .background(Color(0xFF673AB7), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                )
+
+                                // Discount Bar (Orange)
+                                val dHeight = ((point.discount / maxVal).toFloat() * 120).coerceIn(0f, 120f)
+                                Box(
+                                    modifier = Modifier
+                                        .width(5.dp)
+                                        .height(dHeight.dp.coerceAtLeast(2.dp))
+                                        .background(Color(0xFFFB8C00), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                )
+
+                                // Expenses Bar (Blue)
+                                val eHeight = ((point.expenses / maxVal).toFloat() * 120).coerceIn(0f, 120f)
+                                Box(
+                                    modifier = Modifier
+                                        .width(5.dp)
+                                        .height(eHeight.dp.coerceAtLeast(2.dp))
+                                        .background(Color(0xFF1E88E5), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                )
+
+                                // Profit Bar (Green)
+                                val pHeight = ((point.profit / maxVal).toFloat() * 120).coerceIn(0f, 120f)
+                                Box(
+                                    modifier = Modifier
+                                        .width(5.dp)
+                                        .height(pHeight.dp.coerceAtLeast(2.dp))
+                                        .background(Color(0xFF4CAF50), RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
+                                )
+                            }
+
+                            Text(
+                                text = point.dateLabel,
+                                fontSize = 9.sp,
+                                color = Color.DarkGray,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -18376,6 +19388,7 @@ fun SalesProductDetailScreen(
 ) {
     val vouchers by viewModel.allVouchers.collectAsState()
     val voucherItems by viewModel.allVoucherItems.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     val productVouchers = remember(vouchers, voucherItems, productName, startDate, endDate) {
         vouchers.filter { voucher ->
@@ -18493,14 +19506,14 @@ fun SalesProductDetailScreen(
                                     horizontalAlignment = Alignment.End
                                 ) {
                                     Text(
-                                        text = "${String.format("%,.0f", totalAmount)} Ks",
+                                        text = "${String.format("%,.0f", totalAmount)} $selectedCurrency",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = AppTextColor
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${totalQty}x${String.format("%,.0f", unitPrice)} Ks",
+                                        text = "${totalQty}x${String.format("%,.0f", unitPrice)} $selectedCurrency",
                                         fontSize = 12.sp,
                                         color = Color.Gray
                                     )
@@ -18537,6 +19550,7 @@ fun CustomerSalesTotalScreen(
 ) {
     val vouchers by viewModel.allVouchers.collectAsState()
     val voucherItems by viewModel.allVoucherItems.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     // Default: first day of current month to today
     val calendar = remember { java.util.Calendar.getInstance() }
@@ -18642,7 +19656,7 @@ fun CustomerSalesTotalScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "${String.format("%,.0f", customerSalesList.sumOf { it.totalAmount })} Ks",
+                                text = "${String.format("%,.0f", customerSalesList.sumOf { it.totalAmount })} $selectedCurrency",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = BrandPurple,
@@ -18777,7 +19791,7 @@ fun CustomerSalesTotalScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    text = "${String.format("%,.0f", item.totalAmount)} Ks",
+                                    text = "${String.format("%,.0f", item.totalAmount)} $selectedCurrency",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = AppTextColor,
@@ -18845,6 +19859,7 @@ fun CustomerSalesDetailScreen(
 ) {
     val vouchers by viewModel.allVouchers.collectAsState()
     val voucherItems by viewModel.allVoucherItems.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     val customerPurchases = remember(vouchers, voucherItems, customerName, startDate, endDate) {
         val filteredVouchers = vouchers.filter { voucher ->
@@ -18967,14 +19982,14 @@ fun CustomerSalesDetailScreen(
                                 ) {
                                     val totalAmount = item.quantity * item.sellingPrice
                                     Text(
-                                        text = "${String.format("%,.0f", totalAmount)} Ks",
+                                        text = "${String.format("%,.0f", totalAmount)} $selectedCurrency",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = AppTextColor
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${item.quantity}x${String.format("%,.0f", item.sellingPrice)} Ks",
+                                        text = "${item.quantity}x${String.format("%,.0f", item.sellingPrice)} $selectedCurrency",
                                         fontSize = 12.sp,
                                         color = Color.Gray
                                     )
@@ -18996,10 +20011,10 @@ fun ProfitLossReportScreen(
 ) {
     val vouchers by viewModel.allVouchers.collectAsState()
     val voucherItems by viewModel.allVoucherItems.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
-    // Default: first day of current month to today
+    // Default: current month (1st day of month to last day of month)
     val calendar = remember { java.util.Calendar.getInstance() }
-    val todayMillis = calendar.timeInMillis
     val firstDayOfMonthMillis = remember {
         val cal = java.util.Calendar.getInstance()
         cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
@@ -19009,9 +20024,18 @@ fun ProfitLossReportScreen(
         cal.set(java.util.Calendar.MILLISECOND, 0)
         cal.timeInMillis
     }
+    val lastDayOfMonthMillis = remember {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.DAY_OF_MONTH, cal.getActualMaximum(java.util.Calendar.DAY_OF_MONTH))
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+        cal.set(java.util.Calendar.MINUTE, 59)
+        cal.set(java.util.Calendar.SECOND, 59)
+        cal.set(java.util.Calendar.MILLISECOND, 999)
+        cal.timeInMillis
+    }
 
     var startDate by remember { mutableStateOf(firstDayOfMonthMillis) }
-    var endDate by remember { mutableStateOf(todayMillis) }
+    var endDate by remember { mutableStateOf(lastDayOfMonthMillis) }
     var showDatePicker by remember { mutableStateOf(false) }
 
     val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale.US) }
@@ -19110,7 +20134,7 @@ fun ProfitLossReportScreen(
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "${String.format("%,.0f", productProfitList.sumOf { it.totalProfit })} Ks",
+                                text = "${String.format("%,.0f", productProfitList.sumOf { it.totalProfit })} $selectedCurrency",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = BrandPurple,
@@ -19245,7 +20269,7 @@ fun ProfitLossReportScreen(
                                     modifier = Modifier.weight(1f)
                                 )
                                 Text(
-                                    text = "${String.format("%,.0f", item.totalProfit)} Ks",
+                                    text = "${String.format("%,.0f", item.totalProfit)} $selectedCurrency",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (item.totalProfit >= 0) BrandPurple else Color.Red,
@@ -19345,7 +20369,6 @@ fun AddExpenseScreen(
     val selectedCategoryIcon by viewModel.selectedExpenseCategoryIcon.collectAsState()
     val payments by viewModel.allPayments.collectAsState()
 
-    var expenseCategory by remember { mutableStateOf(selectedCategoryName) }
     var description by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf("CASH") }
@@ -19362,18 +20385,13 @@ fun AddExpenseScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(selectedCategoryName) {
-        if (selectedCategoryName.isNotBlank() && selectedCategoryName != "No Category") {
-            expenseCategory = selectedCategoryName
-        }
-    }
-
     LaunchedEffect(expenseId) {
         if (expenseId > 0L) {
             val existing = viewModel.getExpenseById(expenseId)
             if (existing != null) {
-                expenseCategory = existing.categoryName
-                viewModel.selectedExpenseCategoryName.value = existing.categoryName
+                if (viewModel.selectedExpenseCategoryName.value.isBlank()) {
+                    viewModel.selectedExpenseCategoryName.value = existing.categoryName
+                }
                 description = existing.description
                 amountText = if (existing.amount % 1.0 == 0.0) String.format("%.1f", existing.amount) else existing.amount.toString()
                 paymentMethod = existing.paymentMethod
@@ -19521,7 +20539,10 @@ fun AddExpenseScreen(
                         TopAppBar(
                             title = { Text("") },
                             navigationIcon = {
-                                IconButton(onClick = { navController.popBackStack() }) {
+                                IconButton(onClick = {
+                                    viewModel.selectedExpenseCategoryName.value = ""
+                                    navController.popBackStack()
+                                }) {
                                     Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = AppTextColor)
                                 }
                             },
@@ -19542,7 +20563,7 @@ fun AddExpenseScreen(
                                                         showDeleteDialog = false
                                                         val expense = Expense(
                                                             id = expenseId,
-                                                            categoryName = expenseCategory,
+                                                            categoryName = selectedCategoryName,
                                                             description = description,
                                                             amount = amountText.toDoubleOrNull() ?: 0.0,
                                                             paymentMethod = paymentMethod,
@@ -19627,7 +20648,7 @@ fun AddExpenseScreen(
                             ) {
                                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
                                     Text(
-                                        text = if (expenseCategory.isBlank()) "No Category" else expenseCategory,
+                                        text = if (selectedCategoryName.isBlank()) "No Category" else selectedCategoryName,
                                         fontSize = 15.sp,
                                         color = AppTextColor
                                     )
@@ -19716,7 +20737,7 @@ fun AddExpenseScreen(
 
                         Button(
                             onClick = {
-                                if (expenseCategory.isBlank() || expenseCategory == "No Category") {
+                                if (selectedCategoryName.isBlank() || selectedCategoryName == "No Category") {
                                     scope.launch {
                                         snackbarHostState.showSnackbar("ခေါင်းစဉ်ရွေးချယ်ရန်လိုအပ်ပါသည်။")
                                     }
@@ -19724,7 +20745,7 @@ fun AddExpenseScreen(
                                     val amt = amountText.toDoubleOrNull() ?: 0.0
                                     val expense = Expense(
                                         id = expenseId,
-                                        categoryName = expenseCategory,
+                                        categoryName = selectedCategoryName,
                                         description = description,
                                         amount = amt,
                                         paymentMethod = if (paymentMethod == "No Payment") "CASH" else paymentMethod,
@@ -19735,6 +20756,7 @@ fun AddExpenseScreen(
                                     )
                                     viewModel.saveExpense(expense) {
                                         Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
+                                        viewModel.selectedExpenseCategoryName.value = ""
                                         navController.navigate("expenses_list") {
                                             popUpTo("add_expense") { inclusive = true }
                                         }
@@ -20109,6 +21131,7 @@ fun ExpensesListScreen(
     viewModel: POSViewModel
 ) {
     val expenses by viewModel.allExpenses.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
 
     val calendar = remember { Calendar.getInstance() }
     val todayMillis = calendar.timeInMillis
@@ -20170,7 +21193,7 @@ fun ExpensesListScreen(
                         color = AppTextColor
                     )
                     Text(
-                        text = "${String.format("%,.0f", totalAmount)} Ks",
+                        text = "${String.format("%,.0f", totalAmount)} $selectedCurrency",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         color = BrandPurple
@@ -20292,7 +21315,7 @@ fun ExpensesListScreen(
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
-                                        text = "${String.format("%,.0f", expense.amount)} Ks",
+                                        text = "${String.format("%,.0f", expense.amount)} $selectedCurrency",
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = AppTextColor

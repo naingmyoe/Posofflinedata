@@ -76,6 +76,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
     val prodBarcode = MutableStateFlow("")
     val prodQty = MutableStateFlow("")
     val prodAlertQty = MutableStateFlow("")
+    val prodImageUri = MutableStateFlow("")
 
     // Editing States for Customers & Suppliers
     val editingCustomer = MutableStateFlow<Customer?>(null)
@@ -157,6 +158,10 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
     var isFromSalesFlow = false
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.example.util.BackupAndExcelUtils.performAutoDailyBackup(application)
+        }
+
         viewModelScope.launch {
             isProductGridView.collect { value ->
                 sharedPrefs.edit().putBoolean("is_product_grid_view", value).apply()
@@ -703,14 +708,12 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
                         return@withContext Triple(false, "ဒီဖုန်းနံပါတ်သည် အခြား Device တွင် Register ပြုလုပ်ထားပါသည် (Device ID မတူညီပါ)", "device_mismatch")
                     }
-                    if (localAcc.status == "on") {
-                        _currentUser.value = localAcc
-                        sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
-                        Triple(true, "Offline Login Successful", "on")
-                    } else {
-                        sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
-                        Triple(false, "အကောင့် မဖွင့်ရသေးပါ (Pending Activation)", "pending")
-                    }
+                    // Allow valid password login for accounts in local DB (e.g. restored database)
+                    val activeAcc = localAcc.copy(status = "on")
+                    repository.insertAccount(activeAcc)
+                    _currentUser.value = activeAcc
+                    sharedPrefs.edit().putString("logged_in_phone", phone).putString("last_registered_phone", phone).apply()
+                    Triple(true, "Offline Login Successful", "on")
                 } else {
                     Triple(false, "ဤဖုန်းနံပါတ်ဖြင့် အကောင့်ဖွင့်ထားခြင်း မရှိပါ (Account not registered)", "not_found")
                 }
@@ -954,6 +957,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
             val barcode = prodBarcode.value
             val qty = prodQty.value.toIntOrNull() ?: 0
             val alert = prodAlertQty.value.toIntOrNull() ?: 0
+            val imgUri = prodImageUri.value
 
             if (name.isNotEmpty() && sPrice > 0.0) {
                 val currentEditing = editingProduct.value
@@ -969,7 +973,8 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         trackStock = track,
                         barcode = barcode,
                         quantity = qty,
-                        alertQuantity = alert
+                        alertQuantity = alert,
+                        imageUri = imgUri
                     )
                     repository.updateProduct(updatedProduct)
                     editingProduct.value = null
@@ -985,7 +990,8 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         trackStock = track,
                         barcode = barcode,
                         quantity = qty,
-                        alertQuantity = alert
+                        alertQuantity = alert,
+                        imageUri = imgUri
                     )
                     val newId = repository.insertProduct(product)
                     savedProduct = product.copy(id = newId)
@@ -1001,9 +1007,23 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                 prodBarcode.value = ""
                 prodQty.value = ""
                 prodAlertQty.value = ""
+                prodImageUri.value = ""
 
                 onSuccess(savedProduct)
             }
+        }
+    }
+
+    fun insertDirectProduct(product: Product, onSuccess: () -> Unit = {}) {
+        viewModelScope.launch {
+            repository.insertProduct(product)
+            if (product.groupName.isNotEmpty()) {
+                repository.insertGroup(ProductGroup(product.groupName))
+            }
+            if (product.unit.isNotEmpty()) {
+                repository.insertUnit(ProductUnit(product.unit))
+            }
+            onSuccess()
         }
     }
 
@@ -1025,6 +1045,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         prodBarcode.value = ""
         prodQty.value = ""
         prodAlertQty.value = ""
+        prodImageUri.value = ""
     }
 
     // Product Group Management

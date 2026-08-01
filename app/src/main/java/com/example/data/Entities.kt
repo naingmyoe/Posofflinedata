@@ -28,7 +28,8 @@ data class Product(
     val trackStock: Boolean,
     val barcode: String,
     val quantity: Int,
-    val alertQuantity: Int
+    val alertQuantity: Int,
+    val imageUri: String = ""
 )
 
 @Entity(tableName = "product_groups")
