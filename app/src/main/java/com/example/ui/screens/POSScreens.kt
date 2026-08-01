@@ -48,6 +48,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1313,6 +1314,13 @@ data class PosMenuItem(
     val color: Color = BrandPurple
 )
 
+data class DailyStat(
+    val dateStr: String,
+    val dayName: String,
+    val totalAmount: Double,
+    val voucherCount: Int
+)
+
 // 5. MAIN POS DASHBOARD SCREEN
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1321,8 +1329,56 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
     val currentUser by viewModel.currentUser.collectAsState()
     val isOfflineSaved by viewModel.isOfflineSaved.collectAsState()
     val isUploading by viewModel.isUploading.collectAsState()
+    val allVouchers by viewModel.allVouchers.collectAsState()
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    // 7-day sales calculation for current month starting from today (e.g. 01/08 to 07/08)
+    val sevenDaysStats = remember(allVouchers) {
+        val now = java.util.Calendar.getInstance()
+        val currentYear = now.get(java.util.Calendar.YEAR)
+        val currentMonth = now.get(java.util.Calendar.MONTH)
+        val todayDayOfMonth = now.get(java.util.Calendar.DAY_OF_MONTH)
+        val maxDaysInMonth = now.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
+
+        val endDay = (todayDayOfMonth + 6).coerceAtMost(maxDaysInMonth)
+
+        val sdfDate = java.text.SimpleDateFormat("dd/MM", java.util.Locale.US)
+        val sdfDay = java.text.SimpleDateFormat("EEE", java.util.Locale.US)
+
+        (todayDayOfMonth..endDay).map { day ->
+            val dayCal = java.util.Calendar.getInstance()
+            dayCal.set(java.util.Calendar.YEAR, currentYear)
+            dayCal.set(java.util.Calendar.MONTH, currentMonth)
+            dayCal.set(java.util.Calendar.DAY_OF_MONTH, day)
+
+            dayCal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            dayCal.set(java.util.Calendar.MINUTE, 0)
+            dayCal.set(java.util.Calendar.SECOND, 0)
+            dayCal.set(java.util.Calendar.MILLISECOND, 0)
+            val startMs = dayCal.timeInMillis
+
+            dayCal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+            dayCal.set(java.util.Calendar.MINUTE, 59)
+            dayCal.set(java.util.Calendar.SECOND, 59)
+            dayCal.set(java.util.Calendar.MILLISECOND, 999)
+            val endMs = dayCal.timeInMillis
+
+            val dayVouchers = allVouchers.filter { v ->
+                !v.isPurchase && v.timestamp in startMs..endMs
+            }
+
+            DailyStat(
+                dateStr = sdfDate.format(dayCal.time),
+                dayName = sdfDay.format(dayCal.time),
+                totalAmount = dayVouchers.sumOf { it.totalAmount },
+                voucherCount = dayVouchers.size
+            )
+        }
+    }
+
+    val startDateLabel = sevenDaysStats.firstOrNull()?.dateStr ?: ""
+    val endDateLabel = sevenDaysStats.lastOrNull()?.dateStr ?: ""
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -1537,236 +1593,282 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                 )
             }
         ) { innerPadding ->
-            Column(
+            BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFFF7F6FB))
-                    .padding(innerPadding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
             ) {
-                // Hero Banner Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 16.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, Color(0xFFF0EBF8)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                val isTablet = maxWidth >= 600.dp
+                val sectionCols = if (isTablet) 6 else 4
+                val listCols = if (isTablet) 4 else 3
+
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.TopCenter
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .fillMaxSize()
+                            .widthIn(max = 1100.dp)
+                            .padding(innerPadding)
+                            .verticalScroll(rememberScrollState())
+                            .padding(16.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Hello, ${currentUser?.username ?: "sdf"} 👋",
-                                fontSize = 13.sp,
-                                color = Color(0xFF757575),
-                                fontWeight = FontWeight.Medium
+                        // Hero Banner Card
+                        HeroBannerCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp),
+                            currentUser = currentUser,
+                            startDateLabel = startDateLabel,
+                            endDateLabel = endDateLabel,
+                            weeklyStats = sevenDaysStats
+                        )
+
+                        // Section 1: အခြေခံအချက်အလက် (Basic Info)
+                        DashboardSection(
+                            title = "အခြေခံအချက်အလက်",
+                            items = listOf(
+                                PosMenuItem("ကုန်ပစ္စည်းများ", Icons.Filled.ShoppingBag, action = { viewModel.stockReportMode.value = "DEFAULT"; navController.navigate("products_list") }, color = Color(0xFFE53935)),
+                                PosMenuItem("ကုန်ပစ္စည်း အမျိုးအစား", Icons.Filled.Category, "groups_list", color = Color(0xFF1E88E5)),
+                                PosMenuItem("ယူနစ်များ", Icons.Filled.LocalOffer, "units_list_select", color = Color(0xFF00897B)),
+                                PosMenuItem("ငွေပေးချေမှုများ", Icons.Filled.AccountBalanceWallet, "payments_list", color = Color(0xFFFB8C00)),
+                                PosMenuItem("ဈေးဝယ်သူများ", Icons.Filled.People, "customers_list", color = Color(0xFF8E24AA)),
+                                PosMenuItem("ကုန်သွင်းသူများ", Icons.Filled.Groups, "suppliers_list", color = Color(0xFF4CAF50))
+                            ),
+                            navController = navController,
+                            columns = sectionCols
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Section 2: အရောင်း (Sales Section)
+                        DashboardSection(
+                            title = "အရောင်း",
+                            items = listOf(
+                                PosMenuItem("အရောင်း", Icons.Filled.ShoppingCart, action = {
+                                    viewModel.isPurchaseMode.value = false
+                                    viewModel.resetActiveVoucher()
+                                    navController.navigate("new_voucher")
+                                }, color = Color(0xFF5E35B1)),
+                                PosMenuItem("အရောင်းစာရင်း", Icons.Filled.ReceiptLong, action = {
+                                    viewModel.isPurchaseHistoryMode.value = false
+                                    navController.navigate("sales_history")
+                                }, color = Color(0xFF1E88E5)),
+                                PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
+                                    navController.navigate("sales_calendar")
+                                }, color = Color(0xFF4CAF50)),
+                                PosMenuItem("အကြွေးစာရင်းများ", Icons.Filled.People, "customer_debt", color = Color(0xFFFB8C00))
+                            ),
+                            navController = navController,
+                            columns = sectionCols
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Section 3: အဝယ်ကဏ္ဍ (Purchase Section)
+                        DashboardSection(
+                            title = "အဝယ်ကဏ္ဍ",
+                            items = listOf(
+                                PosMenuItem("အဝယ်ဖွင့်မည်", Icons.Filled.AddShoppingCart, action = {
+                                    viewModel.isPurchaseMode.value = true
+                                    viewModel.resetActiveVoucher()
+                                    navController.navigate("new_voucher")
+                                }, color = Color(0xFFFB8C00)),
+                                PosMenuItem("အဝယ်စာရင်း", Icons.Filled.History, action = {
+                                    viewModel.isPurchaseHistoryMode.value = true
+                                    navController.navigate("sales_history")
+                                }, color = Color(0xFF5E35B1)),
+                                PosMenuItem("လအလိုက်အဝယ်", Icons.Filled.GridView, action = {
+                                    viewModel.isPurchaseHistoryMode.value = true
+                                    navController.navigate("sales_month_selector")
+                                }, color = Color(0xFF00897B)),
+                                PosMenuItem("ကုန်သွင်းသူအကြွေး", Icons.Filled.Groups, "supplier_debt", color = Color(0xFFE53935))
+                            ),
+                            navController = navController,
+                            columns = sectionCols
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Section 4: ကုန်ကျစရိတ်များ (Expenses List)
+                        DashboardListSection(
+                            title = "ကုန်ကျစရိတ်များ",
+                            items = listOf(
+                                PosMenuItem("ကုန်ကျစရိတ် အသစ်", Icons.Filled.AddCard, "add_expense", color = Color(0xFFE53935)),
+                                PosMenuItem("ကုန်ကျစရိတ် များ", Icons.Filled.Receipt, "expenses_list", color = Color(0xFFFB8C00)),
+                                PosMenuItem("ကုန်ကျစရိတ် ခေါင်းစဉ်", Icons.Filled.Category, "expense_categories", color = Color(0xFF8E24AA))
+                            ),
+                            navController = navController,
+                            columns = listCols
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Section 5: လက်ကျန်စစ်ဆေးရန်များ (Stock Checks List)
+                        DashboardListSection(
+                            title = "လက်ကျန်စစ်ဆေးရန်များ",
+                            items = listOf(
+                                PosMenuItem("ကုန်ပစ္စည်း လက်ကျန်", Icons.Filled.Inventory, action = { viewModel.stockReportMode.value = "STOCK_REPORT"; navController.navigate("products_list") }, color = Color(0xFF5E35B1)),
+                                PosMenuItem("ကုန်ပစ္စည်း လက်ကျန် အဝယ်", Icons.Filled.Receipt, action = { viewModel.stockReportMode.value = "PURCHASE_VALUE"; navController.navigate("products_list") }, color = Color(0xFF1E88E5)),
+                                PosMenuItem("ကုန်ပစ္စည်း လက်ကျန် ရောင်း", Icons.Filled.ReceiptLong, action = { viewModel.stockReportMode.value = "SELLING_VALUE"; navController.navigate("products_list") }, color = Color(0xFF4CAF50))
+                            ),
+                            navController = navController,
+                            columns = listCols
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Section 6: အစီရင်ခံစာများ (Reports List)
+                        DashboardListSection(
+                            title = "အစီရင်ခံစာများ",
+                            items = listOf(
+                                PosMenuItem("နေ့စဉ်အရောင်း စာရင်း", Icons.Filled.Today, action = {
+                                    viewModel.isPurchaseHistoryMode.value = false
+                                    navController.navigate("sales_history")
+                                }, color = Color(0xFF5E35B1)),
+                                PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
+                                    viewModel.isPurchaseHistoryMode.value = false
+                                    navController.navigate("sales_calendar")
+                                }, color = Color(0xFF1E88E5)),
+                                PosMenuItem("လအလိုက်အ ရောင်းစာရင်း", Icons.Filled.CalendarViewMonth, action = {
+                                    viewModel.isPurchaseHistoryMode.value = false
+                                    navController.navigate("sales_month_selector")
+                                }, color = Color(0xFF00897B)),
+                                PosMenuItem("ကုန်ပစ္စည်း အလိုက်", Icons.Filled.PieChart, "sales_product_quantity", color = Color(0xFF4CAF50)),
+                                PosMenuItem("Customer အလိုက်", Icons.Filled.Person, "customer_sales_total", color = Color(0xFF1E88E5)),
+                                PosMenuItem("အမြတ်စာရင်း (Profit/Loss)", Icons.Filled.TrendingUp, "profit_loss_report", color = Color(0xFF8E24AA)),
+                                PosMenuItem("အရောင်းချုပ်", Icons.Filled.BarChart, "sales_product_total", color = Color(0xFFFB8C00))
+                            ),
+                            navController = navController,
+                            columns = if (isTablet) 6 else 4
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HeroBannerCard(
+    modifier: Modifier = Modifier,
+    currentUser: com.example.data.UserAccount?,
+    startDateLabel: String,
+    endDateLabel: String,
+    weeklyStats: List<DailyStat>
+) {
+    val maxSales = weeklyStats.maxOfOrNull { it.totalAmount }?.takeIf { it > 0 } ?: 1.0
+    val barRatios = weeklyStats.map { (it.totalAmount / maxSales).toFloat().coerceIn(0.12f, 1.0f) }
+
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, Color(0xFFF0EBF8)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Hello, ${currentUser?.username ?: "sdf"} 👋",
+                    fontSize = 13.sp,
+                    color = Color(0xFF757575),
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "UN Mobile POS",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E1035)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "သင့်၏လုပ်ငန်းကို လွယ်ကူမြန်ဆန်စွာ စီမံခန့်ခွဲပါ။",
+                    fontSize = 12.sp,
+                    color = Color(0xFF616161)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Chart Illustration Box with Dynamic Data
+            Box(
+                modifier = Modifier
+                    .width(115.dp)
+                    .height(85.dp)
+                    .background(Color.White, shape = RoundedCornerShape(16.dp))
+                    .border(BorderStroke(1.dp, Color(0xFFEDE7F6)), shape = RoundedCornerShape(16.dp))
+                    .padding(8.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Box(modifier = Modifier.size(5.dp).background(Color(0xFFFF5252), CircleShape))
+                            Box(modifier = Modifier.size(5.dp).background(Color(0xFFFFB74D), CircleShape))
+                            Box(modifier = Modifier.size(5.dp).background(Color(0xFF66BB6A), CircleShape))
+                        }
+                        val rangeLabel = if (startDateLabel == endDateLabel) startDateLabel else "$startDateLabel-$endDateLabel"
+                        Text(
+                            text = rangeLabel,
+                            fontSize = 8.sp,
+                            color = Color(0xFF757575),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val barCount = barRatios.size
+                        val availableWidth = size.width - 8.dp.toPx()
+                        val barWidth = (availableWidth / (barCount * 1.5f)).coerceIn(3.dp.toPx(), 10.dp.toPx())
+                        val barSpacing = if (barCount > 1) (availableWidth - (barWidth * barCount)) / (barCount - 1) else 0f
+                        val purpleLight = Color(0xFFD1C4E9)
+                        val purpleDark = Color(0xFF5E35B1)
+
+                        var startX = 4.dp.toPx()
+                        val points = mutableListOf<androidx.compose.ui.geometry.Offset>()
+
+                        barRatios.forEach { hRatio ->
+                            val barHeight = (size.height - 2.dp.toPx()) * hRatio
+                            val topY = size.height - barHeight
+                            drawRoundRect(
+                                color = purpleLight,
+                                topLeft = androidx.compose.ui.geometry.Offset(startX, topY),
+                                size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx())
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "UN Mobile POS",
-                                fontSize = 20.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1E1035)
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "သင့်၏လုပ်ငန်းကို လွယ်ကူမြန်ဆန်စွာ စီမံခန့်ခွဲပါ။",
-                                fontSize = 12.sp,
-                                color = Color(0xFF616161)
-                            )
+                            points.add(androidx.compose.ui.geometry.Offset(startX + barWidth / 2, topY))
+                            startX += barWidth + barSpacing
                         }
 
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        // Chart Illustration Box
-                        Box(
-                            modifier = Modifier
-                                .width(110.dp)
-                                .height(85.dp)
-                                .background(Color.White, shape = RoundedCornerShape(16.dp))
-                                .border(BorderStroke(1.dp, Color(0xFFEDE7F6)), shape = RoundedCornerShape(16.dp))
-                                .padding(8.dp)
-                        ) {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(modifier = Modifier.size(6.dp).background(Color(0xFFFF5252), CircleShape))
-                                    Box(modifier = Modifier.size(6.dp).background(Color(0xFFFFB74D), CircleShape))
-                                    Box(modifier = Modifier.size(6.dp).background(Color(0xFF66BB6A), CircleShape))
-                                }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val barWidth = 8.dp.toPx()
-                                    val barSpacing = 6.dp.toPx()
-                                    val heights = listOf(0.4f, 0.6f, 0.5f, 0.8f, 0.9f)
-                                    val purpleLight = Color(0xFFD1C4E9)
-                                    val purpleDark = Color(0xFF5E35B1)
-
-                                    var startX = 6.dp.toPx()
-                                    val points = mutableListOf<androidx.compose.ui.geometry.Offset>()
-
-                                    heights.forEach { hRatio ->
-                                        val barHeight = size.height * hRatio
-                                        val topY = size.height - barHeight
-                                        drawRoundRect(
-                                            color = purpleLight,
-                                            topLeft = androidx.compose.ui.geometry.Offset(startX, topY),
-                                            size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
-                                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx())
-                                        )
-                                        points.add(androidx.compose.ui.geometry.Offset(startX + barWidth / 2, topY))
-                                        startX += barWidth + barSpacing
-                                    }
-
-                                    if (points.size > 1) {
-                                        val path = androidx.compose.ui.graphics.Path().apply {
-                                            moveTo(points[0].x, points[0].y)
-                                            for (i in 1 until points.size) {
-                                                lineTo(points[i].x, points[i].y)
-                                            }
-                                        }
-                                        drawPath(
-                                            path = path,
-                                            color = purpleDark,
-                                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
-                                        )
-                                    }
+                        if (points.size > 1) {
+                            val path = androidx.compose.ui.graphics.Path().apply {
+                                moveTo(points[0].x, points[0].y)
+                                for (i in 1 until points.size) {
+                                    lineTo(points[i].x, points[i].y)
                                 }
                             }
+                            drawPath(
+                                path = path,
+                                color = purpleDark,
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            )
                         }
                     }
                 }
-
-                // Section 1: အခြေခံအချက်အလက် (Basic Info - 4 Columns)
-                DashboardSection(
-                    title = "အခြေခံအချက်အလက်",
-                    items = listOf(
-                        PosMenuItem("ကုန်ပစ္စည်းများ", Icons.Filled.ShoppingBag, action = { viewModel.stockReportMode.value = "DEFAULT"; navController.navigate("products_list") }, color = Color(0xFFE53935)),
-                        PosMenuItem("ကုန်ပစ္စည်း အမျိုးအစား", Icons.Filled.Category, "groups_list", color = Color(0xFF1E88E5)),
-                        PosMenuItem("ယူနစ်များ", Icons.Filled.LocalOffer, "units_list_select", color = Color(0xFF00897B)),
-                        PosMenuItem("ငွေပေးချေမှုများ", Icons.Filled.AccountBalanceWallet, "payments_list", color = Color(0xFFFB8C00)),
-                        PosMenuItem("ဈေးဝယ်သူများ", Icons.Filled.People, "customers_list", color = Color(0xFF8E24AA)),
-                        PosMenuItem("ကုန်သွင်းသူများ", Icons.Filled.Groups, "suppliers_list", color = Color(0xFF4CAF50))
-                    ),
-                    navController = navController,
-                    columns = 4
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Section 2: အရောင်း (Sales Section - 4 Columns)
-                DashboardSection(
-                    title = "အရောင်း",
-                    items = listOf(
-                        PosMenuItem("အရောင်း", Icons.Filled.ShoppingCart, action = {
-                            viewModel.isPurchaseMode.value = false
-                            viewModel.resetActiveVoucher()
-                            navController.navigate("new_voucher")
-                        }, color = Color(0xFF5E35B1)),
-                        PosMenuItem("အရောင်းစာရင်း", Icons.Filled.ReceiptLong, action = {
-                            viewModel.isPurchaseHistoryMode.value = false
-                            navController.navigate("sales_history")
-                        }, color = Color(0xFF1E88E5)),
-                        PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
-                            navController.navigate("sales_calendar")
-                        }, color = Color(0xFF4CAF50)),
-                        PosMenuItem("အကြွေးစာရင်းများ", Icons.Filled.People, "customer_debt", color = Color(0xFFFB8C00))
-                    ),
-                    navController = navController,
-                    columns = 4
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Section 3: အဝယ်ကဏ္ဍ (Purchase Section - 4 Columns)
-                DashboardSection(
-                    title = "အဝယ်ကဏ္ဍ",
-                    items = listOf(
-                        PosMenuItem("အဝယ်ဖွင့်မည်", Icons.Filled.AddShoppingCart, action = {
-                            viewModel.isPurchaseMode.value = true
-                            viewModel.resetActiveVoucher()
-                            navController.navigate("new_voucher")
-                        }, color = Color(0xFFFB8C00)),
-                        PosMenuItem("အဝယ်စာရင်း", Icons.Filled.History, action = {
-                            viewModel.isPurchaseHistoryMode.value = true
-                            navController.navigate("sales_history")
-                        }, color = Color(0xFF5E35B1)),
-                        PosMenuItem("လအလိုက်အဝယ်", Icons.Filled.GridView, action = {
-                            viewModel.isPurchaseHistoryMode.value = true
-                            navController.navigate("sales_month_selector")
-                        }, color = Color(0xFF00897B)),
-                        PosMenuItem("ကုန်သွင်းသူအကြွေး", Icons.Filled.Groups, "supplier_debt", color = Color(0xFFE53935))
-                    ),
-                    navController = navController,
-                    columns = 4
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Section 4: ကုန်ကျစရိတ်များ (Expenses List)
-                DashboardListSection(
-                    title = "ကုန်ကျစရိတ်များ",
-                    items = listOf(
-                        PosMenuItem("ကုန်ကျစရိတ် အသစ်", Icons.Filled.AddCard, "add_expense", color = Color(0xFFE53935)),
-                        PosMenuItem("ကုန်ကျစရိတ် များ", Icons.Filled.Receipt, "expenses_list", color = Color(0xFFFB8C00)),
-                        PosMenuItem("ကုန်ကျစရိတ် ခေါင်းစဉ်", Icons.Filled.Category, "expense_categories", color = Color(0xFF8E24AA))
-                    ),
-                    navController = navController,
-                    columns = 3
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Section 5: လက်ကျန်စစ်ဆေးရန်များ (Stock Checks List)
-                DashboardListSection(
-                    title = "လက်ကျန်စစ်ဆေးရန်များ",
-                    items = listOf(
-                        PosMenuItem("ကုန်ပစ္စည်း လက်ကျန်", Icons.Filled.Inventory, action = { viewModel.stockReportMode.value = "STOCK_REPORT"; navController.navigate("products_list") }, color = Color(0xFF5E35B1)),
-                        PosMenuItem("ကုန်ပစ္စည်း လက်ကျန် အဝယ်", Icons.Filled.Receipt, action = { viewModel.stockReportMode.value = "PURCHASE_VALUE"; navController.navigate("products_list") }, color = Color(0xFF1E88E5)),
-                        PosMenuItem("ကုန်ပစ္စည်း လက်ကျန် ရောင်း", Icons.Filled.ReceiptLong, action = { viewModel.stockReportMode.value = "SELLING_VALUE"; navController.navigate("products_list") }, color = Color(0xFF4CAF50))
-                    ),
-                    navController = navController,
-                    columns = 3
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Section 6: အစီရင်ခံစာများ (Reports List)
-                DashboardListSection(
-                    title = "အစီရင်ခံစာများ",
-                    items = listOf(
-                        PosMenuItem("နေ့စဉ်အရောင်း စာရင်း", Icons.Filled.Today, action = {
-                            viewModel.isPurchaseHistoryMode.value = false
-                            navController.navigate("sales_history")
-                        }, color = Color(0xFF5E35B1)),
-                        PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
-                            viewModel.isPurchaseHistoryMode.value = false
-                            navController.navigate("sales_calendar")
-                        }, color = Color(0xFF1E88E5)),
-                        PosMenuItem("လအလိုက်အ ရောင်းစာရင်း", Icons.Filled.CalendarViewMonth, action = {
-                            viewModel.isPurchaseHistoryMode.value = false
-                            navController.navigate("sales_month_selector")
-                        }, color = Color(0xFF00897B)),
-                        PosMenuItem("ကုန်ပစ္စည်း အလိုက်", Icons.Filled.PieChart, "sales_product_quantity", color = Color(0xFF4CAF50)),
-                        PosMenuItem("Customer အလိုက်", Icons.Filled.Person, "customer_sales_total", color = Color(0xFF1E88E5)),
-                        PosMenuItem("အမြတ်စာရင်း (Profit/Loss)", Icons.Filled.TrendingUp, "profit_loss_report", color = Color(0xFF8E24AA)),
-                        PosMenuItem("အရောင်းချုပ်", Icons.Filled.BarChart, "sales_product_total", color = Color(0xFFFB8C00))
-                    ),
-                    navController = navController,
-                    columns = 4
-                )
             }
         }
     }
@@ -2828,24 +2930,24 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                 } else {
                     if (isGridView) {
                         LazyVerticalGrid(
-                            columns = GridCells.Fixed(2),
+                            columns = GridCells.Adaptive(minSize = 105.dp),
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 12.dp)
+                                .padding(horizontal = 6.dp)
                         ) {
                             items(displayedProducts) { product ->
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    shape = RoundedCornerShape(16.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(1.dp, Color(0xFFE2DDF0)),
                                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(160.dp)
-                                        .padding(4.dp)
+                                        .height(130.dp)
+                                        .padding(3.dp)
                                         .clickable(enabled = stockReportMode == "DEFAULT" || stockReportMode == "STOCK_REPORT") {
                                             if (stockReportMode == "DEFAULT") {
-                                                viewModel.editingProduct.value = product
+                                                viewModel.loadProductToForm(product)
                                                 navController.navigate("add_product")
                                             } else if (stockReportMode == "STOCK_REPORT") {
                                                 selectedProductForQty = product
@@ -2872,7 +2974,7 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                                     imageVector = Icons.Filled.Inventory,
                                                     contentDescription = "Product",
                                                     tint = Color(0xFF533B78),
-                                                    modifier = Modifier.size(38.dp)
+                                                    modifier = Modifier.size(32.dp)
                                                 )
                                             }
                                         }
@@ -2883,13 +2985,13 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                                 .fillMaxWidth()
                                                 .align(Alignment.BottomCenter)
                                                 .background(Color(0xFF533B78))
-                                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                                                .padding(horizontal = 4.dp, vertical = 6.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Text(
                                                 text = product.name,
                                                 fontWeight = FontWeight.Medium,
-                                                fontSize = 13.sp,
+                                                fontSize = 12.sp,
                                                 color = Color.White,
                                                 textAlign = TextAlign.Center,
                                                 maxLines = 1,
@@ -2917,7 +3019,7 @@ fun ProductsListScreen(navController: NavController, viewModel: POSViewModel) {
                                         .padding(vertical = 6.dp)
                                         .clickable(enabled = stockReportMode == "DEFAULT" || stockReportMode == "STOCK_REPORT") {
                                             if (stockReportMode == "DEFAULT") {
-                                                viewModel.editingProduct.value = product
+                                                viewModel.loadProductToForm(product)
                                                 navController.navigate("add_product")
                                             } else if (stockReportMode == "STOCK_REPORT") {
                                                 selectedProductForQty = product
@@ -3187,21 +3289,7 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
         }
     }
 
-    LaunchedEffect(editingProduct) {
-        editingProduct?.let {
-            viewModel.prodName.value = it.name
-            viewModel.prodGroup.value = it.groupName
-            viewModel.prodPurchasePrice.value = if (it.purchasePrice > 0.0) it.purchasePrice.toString() else ""
-            viewModel.prodSellingPrice.value = if (it.sellingPrice > 0.0) it.sellingPrice.toString() else ""
-            viewModel.prodUnit.value = it.unit
-            viewModel.prodNote.value = it.note
-            viewModel.prodTrackStock.value = it.trackStock
-            viewModel.prodBarcode.value = it.barcode
-            viewModel.prodQty.value = it.quantity.toString()
-            viewModel.prodAlertQty.value = it.alertQuantity.toString()
-            viewModel.prodImageUri.value = it.imageUri
-        }
-    }
+
 
     Scaffold(
         topBar = {
@@ -3335,9 +3423,7 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                             .fillMaxWidth()
                             .background(Color.White, shape = RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFE0E0E0), shape = RoundedCornerShape(12.dp))
                             .clickable {
-                                if (groupList.isEmpty()) {
-                                    navController.navigate("groups_list_select")
-                                }
+                                navController.navigate("groups_list_select")
                             }
                             .padding(12.dp)
                     ) {
@@ -3466,14 +3552,41 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
                             .fillMaxWidth()
                             .background(Color.White, shape = RoundedCornerShape(12.dp)).border(1.dp, Color(0xFFE0E0E0), shape = RoundedCornerShape(12.dp))
                             .clickable { navController.navigate("units_list_select") }
-                            .padding(16.dp)
+                            .padding(14.dp)
                     ) {
-                        Text(
-                            text = if (unit.isEmpty()) "" else unit,
-                            color = Color(0xFF1C1B1F),
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (unit.isEmpty()) "ယူနစ် ရွေးချယ်ပါ" else unit,
+                                color = if (unit.isEmpty()) Color.Gray else Color(0xFF1C1B1F),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (unit.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = { viewModel.prodUnit.value = "" },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Close,
+                                            contentDescription = "Clear Unit",
+                                            tint = Color.Gray,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Icon(
+                                    imageVector = Icons.Filled.ArrowDropDown,
+                                    contentDescription = "Select Unit",
+                                    tint = BrandPurple
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -3677,18 +3790,20 @@ fun AddProductScreen(navController: NavController, viewModel: POSViewModel) {
 @Composable
 fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
     val groups by viewModel.allGroups.collectAsState()
+    var isSearching by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showAddDialog by remember { mutableStateOf(false) }
     var newGroupName by remember { mutableStateOf("") }
+    var showEditDialog by remember { mutableStateOf<ProductGroup?>(null) }
+    var editGroupName by remember { mutableStateOf("") }
     var showDeleteConfirm by remember { mutableStateOf<ProductGroup?>(null) }
 
-    val selectedGroups = remember {
-        mutableStateOf(
-            viewModel.prodGroup.value.split(",")
-                .map { it.trim() }
-                .filter { it.isNotEmpty() }
-                .toSet()
-        )
+    val prodGroupState by viewModel.prodGroup.collectAsState()
+    val selectedGroups = remember(prodGroupState) {
+        prodGroupState.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
     }
 
     val filteredGroups = remember(groups, searchQuery) {
@@ -3699,33 +3814,61 @@ fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("အုပ်စုရွေးချယ်ရန်", fontWeight = FontWeight.Bold, color = AppTextColor) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = AppTextColor)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        viewModel.prodGroup.value = selectedGroups.value.joinToString(", ")
-                        navController.popBackStack()
-                    }) {
-                        Icon(imageVector = Icons.Filled.Check, contentDescription = "Done", tint = BrandPurple)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White,
-                    navigationIconContentColor = AppTextColor,
-                    titleContentColor = AppTextColor
+            if (isSearching) {
+                TopAppBar(
+                    title = {
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("ရှာဖွေရန်...", color = Color.Gray) },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = AppTextColor,
+                                unfocusedTextColor = AppTextColor
+                            ),
+                            singleLine = true
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            isSearching = false
+                            searchQuery = ""
+                        }) {
+                            Icon(imageVector = Icons.Filled.Close, contentDescription = "Close Search", tint = AppTextColor)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
                 )
-            )
+            } else {
+                TopAppBar(
+                    title = { Text("အုပ်စုရွေးချယ်ရန်", fontWeight = FontWeight.Bold, color = AppTextColor) },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = AppTextColor)
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { isSearching = true }) {
+                            Icon(imageVector = Icons.Filled.Search, contentDescription = "Search", tint = BrandPurple)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.White,
+                        navigationIconContentColor = AppTextColor,
+                        titleContentColor = AppTextColor
+                    )
+                )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
                 containerColor = BrandPurple,
-                contentColor = Color.White
+                contentColor = Color.White,
+                shape = CircleShape
             ) {
                 Icon(imageVector = Icons.Filled.Add, contentDescription = "Add Group")
             }
@@ -3734,89 +3877,61 @@ fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(LightBg)
+                .background(Color.White)
                 .padding(innerPadding)
         ) {
-            // Search Bar matching video (Enter Group Name)
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Enter Group Name", color = Color.Gray) },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Filled.Search, contentDescription = "Search", tint = Color.Gray)
-                },
-                trailingIcon = {
-                    IconButton(onClick = { showAddDialog = true }) {
-                        Icon(imageVector = Icons.Filled.FolderZip, contentDescription = "Add Group", tint = BrandPurple)
-                    }
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = AppTextColor,
-                    unfocusedTextColor = AppTextColor,
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent
-                ),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                singleLine = true
-            )
             if (filteredGroups.isEmpty()) {
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .weight(1f)
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .background(Color(0xFFE8E5F3), shape = CircleShape),
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Folder,
-                            contentDescription = "No Groups",
-                            tint = BrandPurple,
-                            modifier = Modifier.size(48.dp)
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .background(Color(0xFFE8E5F3), shape = CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Folder,
+                                contentDescription = "No Groups",
+                                tint = BrandPurple,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "အုပ်စုများ ရှာမတွေ့ပါ",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = Color.Gray
                         )
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "အုပ်စုများ ရှာမတွေ့ပါ",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = Color.Gray
-                    )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .weight(1f)
-                        .padding(horizontal = 16.dp)
                 ) {
                     items(filteredGroups) { group ->
-                        val currentList = viewModel.prodGroup.value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                        val isSelected = currentList.contains(group.name)
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(12.dp),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        val isSelected = selectedGroups.contains(group.name)
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
                                 .combinedClickable(
                                     onClick = {
-                                        if (!currentList.contains(group.name)) {
-                                            val updated = currentList + group.name
-                                            viewModel.prodGroup.value = updated.joinToString(", ")
+                                        val updated = if (isSelected) {
+                                            selectedGroups - group.name
+                                        } else {
+                                            selectedGroups + group.name
                                         }
+                                        viewModel.prodGroup.value = updated.joinToString(", ")
                                         navController.popBackStack()
                                     },
                                     onLongClick = {
@@ -3827,7 +3942,7 @@ fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
@@ -3835,13 +3950,13 @@ fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                                     Box(
                                         modifier = Modifier
                                             .size(40.dp)
-                                            .background(BrandPurple, shape = RoundedCornerShape(10.dp)),
+                                            .background(if (isSelected) BrandPurple else Color(0xFFE8E5F3), shape = RoundedCornerShape(10.dp)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Folder,
                                             contentDescription = "Folder",
-                                            tint = Color.White,
+                                            tint = if (isSelected) Color.White else BrandPurple,
                                             modifier = Modifier.size(22.dp)
                                         )
                                     }
@@ -3853,15 +3968,67 @@ fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                                         color = AppTextColor
                                     )
                                 }
-                                Icon(
-                                    imageVector = Icons.Filled.ChevronRight,
-                                    contentDescription = "Select",
-                                    tint = Color.Gray
-                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = "Selected",
+                                        tint = BrandPurple,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
                             }
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 72.dp),
+                                color = Color(0xFFEEEEEE),
+                                thickness = 1.dp
+                            )
                         }
                     }
                 }
+            }
+
+            // Edit Group Dialog
+            showEditDialog?.let { group ->
+                AlertDialog(
+                    onDismissRequest = { showEditDialog = null },
+                    title = { Text("အုပ်စုအမည် ပြင်ရန်", fontWeight = FontWeight.Bold, color = AppTextColor) },
+                    text = {
+                        OutlinedTextField(
+                            value = editGroupName,
+                            onValueChange = { editGroupName = it },
+                            label = { Text("အုပ်စုအမည်") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = AppTextColor,
+                                unfocusedTextColor = AppTextColor
+                            )
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (editGroupName.isNotEmpty()) {
+                                    val newG = editGroupName.trim()
+                                    viewModel.updateProductGroup(group, newG)
+                                    if (selectedGroups.contains(group.name)) {
+                                        val updated = (selectedGroups - group.name) + newG
+                                        viewModel.prodGroup.value = updated.joinToString(", ")
+                                    }
+                                    showEditDialog = null
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandPurple)
+                        ) {
+                            Text("ပြင်မည်", color = Color.White)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEditDialog = null }) {
+                            Text("Cancel", color = BrandPurple)
+                        }
+                    }
+                )
             }
 
             if (showAddDialog) {
@@ -3899,7 +4066,11 @@ fun GroupsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                         Button(
                             onClick = {
                                 if (newGroupName.isNotEmpty()) {
-                                    viewModel.addProductGroup(newGroupName.trim())
+                                    val gName = newGroupName.trim()
+                                    viewModel.addProductGroup(gName)
+                                    val updated = selectedGroups + gName
+                                    viewModel.prodGroup.value = updated.joinToString(", ")
+                                    navController.popBackStack()
                                     newGroupName = ""
                                     showAddDialog = false
                                 }
@@ -4093,17 +4264,16 @@ fun UnitsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                         .weight(1f)
                 ) {
                     items(filteredUnits) { unit ->
+                        val selectedUnit by viewModel.prodUnit.collectAsState()
+                        val isSelected = selectedUnit == unit.name
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .combinedClickable(
                                     onClick = {
+                                        viewModel.prodUnit.value = unit.name
                                         if (isSelecting) {
-                                            viewModel.prodUnit.value = unit.name
                                             navController.popBackStack()
-                                        } else {
-                                            editUnitName = unit.name
-                                            showEditDialog = unit
                                         }
                                     },
                                     onLongClick = {
@@ -4122,13 +4292,13 @@ fun UnitsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                                     Box(
                                         modifier = Modifier
                                             .size(40.dp)
-                                            .background(BrandPurple, shape = RoundedCornerShape(10.dp)),
+                                            .background(if (isSelected) BrandPurple else Color(0xFFE8E5F3), shape = RoundedCornerShape(10.dp)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             imageVector = Icons.Filled.Folder,
                                             contentDescription = "Unit",
-                                            tint = Color.White,
+                                            tint = if (isSelected) Color.White else BrandPurple,
                                             modifier = Modifier.size(22.dp)
                                         )
                                     }
@@ -4140,18 +4310,12 @@ fun UnitsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                                         color = AppTextColor
                                     )
                                 }
-                                IconButton(
-                                    onClick = {
-                                        editUnitName = unit.name
-                                        showEditDialog = unit
-                                    },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
+                                if (isSelected && isSelecting) {
                                     Icon(
-                                        imageVector = Icons.Filled.Edit,
-                                        contentDescription = "Edit Unit",
-                                        tint = Color.Gray,
-                                        modifier = Modifier.size(18.dp)
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = "Selected Unit",
+                                        tint = BrandPurple,
+                                        modifier = Modifier.size(22.dp)
                                     )
                                 }
                             }
@@ -4266,7 +4430,13 @@ fun UnitsSelectScreen(navController: NavController, viewModel: POSViewModel) {
                 Button(
                     onClick = {
                         if (newUnitName.isNotEmpty()) {
-                            viewModel.addProductUnit(newUnitName.trim())
+                            val uName = newUnitName.trim()
+                            viewModel.addProductUnit(uName)
+                            if (isSelecting) {
+                                viewModel.prodUnit.value = uName
+                                navController.popBackStack()
+                            }
+                            newUnitName = ""
                             showAddDialog = false
                         }
                     },
@@ -4710,7 +4880,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
         }
     }
 
-    var showCustomerDialog by remember { mutableStateOf(false) }
+    var showCustomerDialog by rememberSaveable { mutableStateOf(false) }
     var showPaymentDialog by remember { mutableStateOf(false) }
     var printVoucher by remember { mutableStateOf(false) }
     var showAdvanced by rememberSaveable { mutableStateOf(false) }
@@ -5069,7 +5239,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         } else {
                             if (isGridView) {
                                 LazyVerticalGrid(
-                                    columns = GridCells.Fixed(2),
+                                    columns = GridCells.Adaptive(minSize = 105.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .weight(1f),
@@ -6913,7 +7083,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                     } else {
                         if (isGridView) {
                             LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
+                                columns = GridCells.Adaptive(minSize = 105.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .weight(1f),
@@ -15760,8 +15930,8 @@ fun drawReceiptBitmap(
     
     for (item in items) {
         val name = item.product.name
-        val unitStr = item.product.unit.ifBlank { "pcs" }
-        val qty = "${item.quantity} $unitStr"
+        val unitStr = item.product.unit.trim()
+        val qty = if (unitStr.isNotEmpty()) "${item.quantity} $unitStr" else "${item.quantity}"
         val priceStr = numberFormat.format(item.product.sellingPrice)
         val amtStr = "${numberFormat.format(item.product.sellingPrice * item.quantity)}"
         

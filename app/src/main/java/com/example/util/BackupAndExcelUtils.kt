@@ -50,11 +50,9 @@ object BackupAndExcelUtils {
             val dateStr = SimpleDateFormat("ddMMyy", Locale.US).format(Date())
             val targetFileName = "$dateStr.db" // e.g., 310726.db or 010826.db
 
-            // Target folders (Internal Storage UNMobilePos, Documents/UNMobilePos, Downloads/UNMobilePos, App External Files)
+            // Target folder: Internal Storage UNMobilePos only
             val targetDirs = listOfNotNull(
                 File(Environment.getExternalStorageDirectory(), "UNMobilePos"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "UNMobilePos"),
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "UNMobilePos"),
                 context.getExternalFilesDir(null)?.let { File(it, "UNMobilePos") }
             )
 
@@ -198,8 +196,6 @@ object BackupAndExcelUtils {
     private fun saveCsvToFolder(context: Context, fileName: String, content: String): String {
         val targetDirs = listOfNotNull(
             File(Environment.getExternalStorageDirectory(), "UNMobilePos/Excel"),
-            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "UNMobilePos/Excel"),
-            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "UNMobilePos/Excel"),
             context.getExternalFilesDir(null)?.let { File(it, "UNMobilePos/Excel") }
         )
 
@@ -262,7 +258,7 @@ object BackupAndExcelUtils {
                             val groupName = tokens.getOrNull(2) ?: "General"
                             val purchasePrice = tokens.getOrNull(3)?.toDoubleOrNull() ?: 0.0
                             val sellingPrice = tokens.getOrNull(4)?.toDoubleOrNull() ?: 0.0
-                            val unit = tokens.getOrNull(5)?.ifEmpty { "Pcs" } ?: "Pcs"
+                            val unit = tokens.getOrNull(5) ?: ""
                             val quantity = tokens.getOrNull(6)?.toIntOrNull() ?: 0
                             val alertQuantity = tokens.getOrNull(7)?.toIntOrNull() ?: 5
                             val note = tokens.getOrNull(8) ?: ""

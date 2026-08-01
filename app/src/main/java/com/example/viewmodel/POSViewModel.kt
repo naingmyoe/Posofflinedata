@@ -70,7 +70,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
     val prodGroup = MutableStateFlow("")
     val prodPurchasePrice = MutableStateFlow("")
     val prodSellingPrice = MutableStateFlow("")
-    val prodUnit = MutableStateFlow("Pcs")
+    val prodUnit = MutableStateFlow("")
     val prodNote = MutableStateFlow("")
     val prodTrackStock = MutableStateFlow(true)
     val prodBarcode = MutableStateFlow("")
@@ -1001,7 +1001,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                 prodGroup.value = ""
                 prodPurchasePrice.value = ""
                 prodSellingPrice.value = ""
-                prodUnit.value = "Pcs"
+                prodUnit.value = ""
                 prodNote.value = ""
                 prodTrackStock.value = true
                 prodBarcode.value = ""
@@ -1046,6 +1046,21 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         prodQty.value = ""
         prodAlertQty.value = ""
         prodImageUri.value = ""
+    }
+
+    fun loadProductToForm(product: Product) {
+        editingProduct.value = product
+        prodName.value = product.name
+        prodGroup.value = product.groupName
+        prodPurchasePrice.value = if (product.purchasePrice > 0.0) product.purchasePrice.toString() else ""
+        prodSellingPrice.value = if (product.sellingPrice > 0.0) product.sellingPrice.toString() else ""
+        prodUnit.value = product.unit
+        prodNote.value = product.note
+        prodTrackStock.value = product.trackStock
+        prodBarcode.value = product.barcode
+        prodQty.value = product.quantity.toString()
+        prodAlertQty.value = product.alertQuantity.toString()
+        prodImageUri.value = product.imageUri
     }
 
     // Product Group Management
