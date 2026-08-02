@@ -1333,7 +1333,7 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
-    // 7-day sales calculation for current month starting from today (e.g. 01/08 to 07/08)
+    // 7-day sales calculation for current month (static weekly chunks: 01 to 07, 07 to 13, 13 to 19, 19 to 25, 25 to end)
     val sevenDaysStats = remember(allVouchers) {
         val now = java.util.Calendar.getInstance()
         val currentYear = now.get(java.util.Calendar.YEAR)
@@ -1341,12 +1341,19 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
         val todayDayOfMonth = now.get(java.util.Calendar.DAY_OF_MONTH)
         val maxDaysInMonth = now.getActualMaximum(java.util.Calendar.DAY_OF_MONTH)
 
-        val endDay = (todayDayOfMonth + 6).coerceAtMost(maxDaysInMonth)
+        val startDay = when {
+            todayDayOfMonth < 7 -> 1
+            todayDayOfMonth < 13 -> 7
+            todayDayOfMonth < 19 -> 13
+            todayDayOfMonth < 25 -> 19
+            else -> 25
+        }
+        val endDay = (startDay + 6).coerceAtMost(maxDaysInMonth)
 
         val sdfDate = java.text.SimpleDateFormat("dd/MM", java.util.Locale.US)
         val sdfDay = java.text.SimpleDateFormat("EEE", java.util.Locale.US)
 
-        (todayDayOfMonth..endDay).map { day ->
+        (startDay..endDay).map { day ->
             val dayCal = java.util.Calendar.getInstance()
             dayCal.set(java.util.Calendar.YEAR, currentYear)
             dayCal.set(java.util.Calendar.MONTH, currentMonth)
