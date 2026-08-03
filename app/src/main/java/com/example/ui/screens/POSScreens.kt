@@ -1660,9 +1660,16 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                                 }, color = Color(0xFF5E35B1)),
                                 PosMenuItem("အရောင်းစာရင်း", Icons.Filled.ReceiptLong, action = {
                                     viewModel.isPurchaseHistoryMode.value = false
+                                    val now = java.util.Calendar.getInstance()
+                                    viewModel.calendarYear.value = now.get(java.util.Calendar.YEAR)
+                                    viewModel.calendarMonth.value = now.get(java.util.Calendar.MONTH)
                                     navController.navigate("sales_history")
                                 }, color = Color(0xFF1E88E5)),
                                 PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
+                                    viewModel.isPurchaseHistoryMode.value = false
+                                    val now = java.util.Calendar.getInstance()
+                                    viewModel.calendarYear.value = now.get(java.util.Calendar.YEAR)
+                                    viewModel.calendarMonth.value = now.get(java.util.Calendar.MONTH)
                                     navController.navigate("sales_calendar")
                                 }, color = Color(0xFF4CAF50)),
                                 PosMenuItem("အကြွေးစာရင်းများ", Icons.Filled.People, "customer_debt", color = Color(0xFFFB8C00))
@@ -1684,6 +1691,9 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                                 }, color = Color(0xFFFB8C00)),
                                 PosMenuItem("အဝယ်စာရင်း", Icons.Filled.History, action = {
                                     viewModel.isPurchaseHistoryMode.value = true
+                                    val now = java.util.Calendar.getInstance()
+                                    viewModel.calendarYear.value = now.get(java.util.Calendar.YEAR)
+                                    viewModel.calendarMonth.value = now.get(java.util.Calendar.MONTH)
                                     navController.navigate("sales_history")
                                 }, color = Color(0xFF5E35B1)),
                                 PosMenuItem("လအလိုက်အဝယ်", Icons.Filled.GridView, action = {
@@ -1732,10 +1742,16 @@ fun DashboardScreen(navController: NavController, viewModel: POSViewModel) {
                             items = listOf(
                                 PosMenuItem("နေ့စဉ်အရောင်း စာရင်း", Icons.Filled.Today, action = {
                                     viewModel.isPurchaseHistoryMode.value = false
+                                    val now = java.util.Calendar.getInstance()
+                                    viewModel.calendarYear.value = now.get(java.util.Calendar.YEAR)
+                                    viewModel.calendarMonth.value = now.get(java.util.Calendar.MONTH)
                                     navController.navigate("sales_history")
                                 }, color = Color(0xFF5E35B1)),
                                 PosMenuItem("အရောင်းပြက္ခဒိန်", Icons.Filled.CalendarMonth, action = {
                                     viewModel.isPurchaseHistoryMode.value = false
+                                    val now = java.util.Calendar.getInstance()
+                                    viewModel.calendarYear.value = now.get(java.util.Calendar.YEAR)
+                                    viewModel.calendarMonth.value = now.get(java.util.Calendar.MONTH)
                                     navController.navigate("sales_calendar")
                                 }, color = Color(0xFF1E88E5)),
                                 PosMenuItem("လအလိုက်အ ရောင်းစာရင်း", Icons.Filled.CalendarViewMonth, action = {
@@ -4823,7 +4839,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
         }
     }
 
-    val totalAmount = remember(cart, isPurchaseMode) {
+    val rawTotalAmount = remember(cart, isPurchaseMode) {
         cart.sumOf { (if (isPurchaseMode) it.product.purchasePrice else it.product.sellingPrice) * it.quantity }
     }
     val totalItems = remember(cart) {
@@ -4929,13 +4945,28 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
     var isSearchExpanded by remember { mutableStateOf(false) }
     var showCategoryRow by remember { mutableStateOf(true) }
     
-    var discountAmount by remember { mutableStateOf(0.0) }
-    var feeAmount by remember { mutableStateOf(0.0) }
-    var noteText by remember { mutableStateOf("") }
+    var discountAmount by remember { mutableStateOf(viewModel.activeDiscount.value) }
+    var feeAmount by remember { mutableStateOf(viewModel.activeFee.value) }
+    var noteText by remember { mutableStateOf(viewModel.activeNote.value) }
     var showDiscountDialog by remember { mutableStateOf(false) }
     var showFeeDialog by remember { mutableStateOf(false) }
     var showNoteDialog by remember { mutableStateOf(false) }
     var showDiscountFeeSheet by remember { mutableStateOf(false) }
+
+    val currentActiveVoucherId by viewModel.activeVoucherId.collectAsState()
+    val currentActiveDiscount by viewModel.activeDiscount.collectAsState()
+    val currentActiveFee by viewModel.activeFee.collectAsState()
+    val currentActiveNote by viewModel.activeNote.collectAsState()
+
+    LaunchedEffect(currentActiveVoucherId, currentActiveDiscount, currentActiveFee, currentActiveNote) {
+        discountAmount = currentActiveDiscount
+        feeAmount = currentActiveFee
+        noteText = currentActiveNote
+    }
+
+    val totalAmount = remember(rawTotalAmount, discountAmount, feeAmount) {
+        (rawTotalAmount - discountAmount + feeAmount).coerceAtLeast(0.0)
+    }
 
     if (showOutOfStockDialogFor != null) {
         AlertDialog(
@@ -5018,6 +5049,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
         discountAmount = 0.0
         feeAmount = 0.0
         noteText = ""
+        viewModel.resetActiveVoucher()
         selectedCalendar.value = java.util.Calendar.getInstance()
         screenState = "select_mode"
     }
@@ -6046,7 +6078,9 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                             paidAmount = paidVal,
                                             changeAmount = initialChange,
                                             balanceAmount = initialBalance,
-                                            note = initialNote
+                                            note = if (initialNote.isNotBlank()) initialNote else noteText,
+                                            discount = discountAmount,
+                                            fee = feeAmount
                                         ) {
                                             screenState = "checkout_success"
                                         }
@@ -6286,7 +6320,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                 } else {
                     val finalDiscount = if (printDiscount) discountAmount else 0.0
                     val finalFee = if (printFee) feeAmount else 0.0
-                    val finalAmount = (totalAmount - discountAmount + feeAmount).coerceAtLeast(0.0)
+                    val finalAmount = totalAmount
                     Scaffold(
                         topBar = {
                             TopAppBar(
@@ -6510,7 +6544,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("စုစုပေါင်း", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                                Text("${totalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
+                                Text("${rawTotalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
                             }
 
                             if (discountAmount > 0.0) {
@@ -7315,7 +7349,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
         "voucher_detail" -> {
             val finalDiscount = if (printDiscount) discountAmount else 0.0
             val finalFee = if (printFee) feeAmount else 0.0
-            val finalAmount = (totalAmount - discountAmount + feeAmount).coerceAtLeast(0.0)
+            val finalAmount = totalAmount
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -7560,7 +7594,7 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("စုစုပေါင်း", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.Gray)
-                        Text("${totalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
+                        Text("${rawTotalAmount.toInt()} $selectedCurrency", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.DarkGray)
                     }
 
                     // Discount row (if any)
@@ -8369,7 +8403,9 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
                                     paidAmount = paidVal,
                                     changeAmount = initialChange,
                                     balanceAmount = initialBalance,
-                                    note = initialNote
+                                    note = if (initialNote.isNotBlank()) initialNote else noteText,
+                                    discount = discountAmount,
+                                    fee = feeAmount
                                 ) {
                                     screenState = "checkout_success"
                                 }
@@ -8878,34 +8914,58 @@ fun NewVoucherScreen(navController: NavController, viewModel: POSViewModel) {
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
             var paymentSearchQuery by remember { mutableStateOf("") }
+            var isSearchActive by remember { mutableStateOf(false) }
             Scaffold(
                 topBar = {
                     TopAppBar(
                         title = {
-                            OutlinedTextField(
-                                value = paymentSearchQuery,
-                                onValueChange = { paymentSearchQuery = it },
-                                placeholder = { Text("Enter Payment", color = Color.Gray, fontSize = 15.sp) },
-                                leadingIcon = { Icon(imageVector = Icons.Filled.Search, contentDescription = "Search", tint = Color.Gray) },
-                                trailingIcon = { Icon(imageVector = Icons.Filled.CreditCard, contentDescription = "Card", tint = Color.Gray) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                shape = RoundedCornerShape(24.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = Color(0xFF1C1B1F),
-                                    unfocusedTextColor = Color(0xFF1C1B1F),
-                                    focusedContainerColor = Color(0xFFF2F0F7),
-                                    unfocusedContainerColor = Color(0xFFF2F0F7),
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent
-                                ),
-                                singleLine = true
-                            )
+                            if (isSearchActive) {
+                                OutlinedTextField(
+                                    value = paymentSearchQuery,
+                                    onValueChange = { paymentSearchQuery = it },
+                                    placeholder = { Text("ရှာဖွေပါ...", color = Color.Gray, fontSize = 15.sp) },
+                                    leadingIcon = { Icon(imageVector = Icons.Filled.Search, contentDescription = "Search", tint = Color.Gray) },
+                                    trailingIcon = {
+                                        IconButton(onClick = {
+                                            paymentSearchQuery = ""
+                                            isSearchActive = false
+                                        }) {
+                                            Icon(imageVector = Icons.Filled.Close, contentDescription = "Close", tint = Color.Gray)
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    shape = RoundedCornerShape(24.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color(0xFF1C1B1F),
+                                        unfocusedTextColor = Color(0xFF1C1B1F),
+                                        focusedContainerColor = Color(0xFFF2F0F7),
+                                        unfocusedContainerColor = Color(0xFFF2F0F7),
+                                        focusedBorderColor = Color.Transparent,
+                                        unfocusedBorderColor = Color.Transparent
+                                    ),
+                                    singleLine = true
+                                )
+                            } else {
+                                Text(
+                                    text = "ငွေပေးချေမှု",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppTextColor
+                                )
+                            }
                         },
                         navigationIcon = {
                             IconButton(onClick = { showPaymentDialog = false }) {
                                 Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        },
+                        actions = {
+                            if (!isSearchActive) {
+                                IconButton(onClick = { isSearchActive = true }) {
+                                    Icon(imageVector = Icons.Filled.Search, contentDescription = "Search", tint = AppTextColor)
+                                }
                             }
                         },
                         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
@@ -9472,7 +9532,7 @@ fun FilterDrawerContent(
                         value = paymentQuery,
                         onValueChange = { paymentQuery = it },
                         modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("Enter Payment") },
+                        placeholder = { Text("ငွေပေးချေမှု ရှာဖွေပါ") },
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = Color.Gray) },
                         singleLine = true,
                         shape = RoundedCornerShape(12.dp),
@@ -9670,7 +9730,20 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
     val vouchers by viewModel.allVouchers.collectAsState()
     val isPurchaseHistoryMode by viewModel.isPurchaseHistoryMode.collectAsState()
     val selectedCurrency by viewModel.selectedCurrency.collectAsState()
-    val calendar = remember { mutableStateOf(Calendar.getInstance()) }
+    val selectedYear by viewModel.calendarYear.collectAsState()
+    val selectedMonth by viewModel.calendarMonth.collectAsState()
+    val calendar = remember {
+        mutableStateOf(Calendar.getInstance().apply {
+            set(Calendar.YEAR, selectedYear)
+            set(Calendar.MONTH, selectedMonth)
+        })
+    }
+    LaunchedEffect(selectedYear, selectedMonth) {
+        calendar.value = Calendar.getInstance().apply {
+            set(Calendar.YEAR, selectedYear)
+            set(Calendar.MONTH, selectedMonth)
+        }
+    }
     val filterMode = remember { mutableStateOf("month") }
     val selectedCustomer = remember { mutableStateOf<Customer?>(null) }
     val selectedPaymentMethod = remember { mutableStateOf<String?>(null) }
@@ -9870,6 +9943,8 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                             newCal.add(Calendar.DATE, -1)
                                         }
                                         calendar.value = newCal
+                                        viewModel.calendarYear.value = newCal.get(Calendar.YEAR)
+                                        viewModel.calendarMonth.value = newCal.get(Calendar.MONTH)
                                     }
                                 ) {
                                     Icon(
@@ -9903,6 +9978,8 @@ fun SalesHistoryScreen(navController: NavController, viewModel: POSViewModel) {
                                             newCal.add(Calendar.DATE, 1)
                                         }
                                         calendar.value = newCal
+                                        viewModel.calendarYear.value = newCal.get(Calendar.YEAR)
+                                        viewModel.calendarMonth.value = newCal.get(Calendar.MONTH)
                                     }
                                 ) {
                                     Icon(
@@ -16832,8 +16909,7 @@ fun SalesCalendarScreen(navController: NavController, viewModel: POSViewModel) {
         vouchers.filter { !it.isPurchase && it.isCompleted }
     }
     
-    // As requested: Force current year on the sales calendar
-    val year = remember { Calendar.getInstance().get(Calendar.YEAR) }
+    val year by viewModel.calendarYear.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.isPurchaseHistoryMode.value = false
@@ -21333,6 +21409,10 @@ fun ExpensesListScreen(
     }
     val totalAmount = remember(filteredExpenses) { filteredExpenses.sumOf { it.amount } }
 
+    val groupedExpenses = remember(filteredExpenses) {
+        filteredExpenses.groupBy { it.categoryName.ifBlank { "အထွေထွေ" } }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -21435,9 +21515,234 @@ fun ExpensesListScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    groupedExpenses.forEach { (categoryName, catExpenses) ->
+                        val catTotal = catExpenses.sumOf { it.amount }
+
+                        item(key = categoryName) {
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val encodedCat = Uri.encode(categoryName)
+                                        navController.navigate("expense_category_detail/$encodedCat/$startDate/$endDate")
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(42.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color(0xFFF3E5F5)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Category,
+                                                contentDescription = null,
+                                                tint = Color(0xFF8E24AA),
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(14.dp))
+                                        Column {
+                                            Text(
+                                                text = categoryName,
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = AppTextColor
+                                            )
+                                            Text(
+                                                text = "${catExpenses.size} ခု",
+                                                fontSize = 13.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${String.format("%,.0f", catTotal)} $selectedCurrency",
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BrandPurple
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Icon(
+                                            imageVector = Icons.Filled.ChevronRight,
+                                            contentDescription = "View Detail Layer",
+                                            tint = Color.Gray,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDatePicker) {
+        MyDateRangePickerDialog(
+            onDismissRequest = { showDatePicker = false },
+            onDateRangeSelected = { start, end ->
+                if (start != null && end != null) {
+                    val localStartCal = Calendar.getInstance().apply {
+                        timeInMillis = start
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }
+                    startDate = localStartCal.timeInMillis
+
+                    val localEndCal = Calendar.getInstance().apply {
+                        timeInMillis = end
+                        set(Calendar.HOUR_OF_DAY, 23)
+                        set(Calendar.MINUTE, 59)
+                        set(Calendar.SECOND, 59)
+                        set(Calendar.MILLISECOND, 999)
+                    }
+                    endDate = localEndCal.timeInMillis
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ExpenseCategoryDetailScreen(
+    navController: NavController,
+    viewModel: POSViewModel,
+    categoryName: String,
+    startDate: Long,
+    endDate: Long
+) {
+    val expenses by viewModel.allExpenses.collectAsState()
+    val selectedCurrency by viewModel.selectedCurrency.collectAsState()
+    val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy", Locale.US) }
+
+    val categoryExpenses = remember(expenses, categoryName, startDate, endDate) {
+        expenses.filter { expense ->
+            val matchesCat = if (categoryName == "အထွေထွေ") {
+                expense.categoryName.isBlank() || expense.categoryName == "အထွေထွေ"
+            } else {
+                expense.categoryName == categoryName
+            }
+            matchesCat && (startDate == 0L || endDate == 0L || expense.timestamp in startDate..endDate)
+        }
+    }
+
+    val totalAmount = remember(categoryExpenses) { categoryExpenses.sumOf { it.amount } }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(categoryName, fontWeight = FontWeight.Bold, color = AppTextColor) },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "Back", tint = AppTextColor)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White)
+            )
+        },
+        bottomBar = {
+            Surface(
+                color = Color.White,
+                shadowElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "စုစုပေါင်း (${categoryExpenses.size})",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AppTextColor
+                    )
+                    Text(
+                        text = "${String.format("%,.0f", totalAmount)} $selectedCurrency",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BrandPurple
+                    )
+                }
+            }
+        },
+        modifier = Modifier.fillMaxSize()
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFFAF9FD))
+                .padding(innerPadding)
+        ) {
+            if (startDate > 0L && endDate > 0L) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    shape = RoundedCornerShape(0.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.DateRange,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${dateFormatter.format(Date(startDate))} မှ ${dateFormatter.format(Date(endDate))} အထိ",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.DarkGray
+                        )
+                    }
+                }
+            }
+
+            if (categoryExpenses.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("ကုန်ကျစရိတ် မှတ်တမ်း မရှိသေးပါ", color = Color.Gray, fontSize = 15.sp)
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
                         .padding(vertical = 8.dp)
                 ) {
-                    items(filteredExpenses) { expense ->
+                    items(categoryExpenses) { expense ->
                         val dateFormatted = remember(expense.timestamp) {
                             if (expense.dateString.isNotBlank()) expense.dateString else dateFormatter.format(Date(expense.timestamp))
                         }
@@ -21471,24 +21776,16 @@ fun ExpensesListScreen(
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = expense.categoryName,
+                                        text = if (expense.description.isNotBlank()) expense.description else categoryName,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = AppTextColor
                                     )
-                                    if (expense.description.isNotBlank()) {
-                                        Text(
-                                            text = expense.description,
-                                            fontSize = 13.sp,
-                                            color = Color.Gray
-                                        )
-                                    } else {
-                                        Text(
-                                            text = dateFormatted,
-                                            fontSize = 12.sp,
-                                            color = Color.Gray
-                                        )
-                                    }
+                                    Text(
+                                        text = dateFormatted,
+                                        fontSize = 13.sp,
+                                        color = Color.Gray
+                                    )
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
@@ -21515,33 +21812,6 @@ fun ExpensesListScreen(
                 }
             }
         }
-    }
-
-    if (showDatePicker) {
-        MyDateRangePickerDialog(
-            onDismissRequest = { showDatePicker = false },
-            onDateRangeSelected = { start, end ->
-                if (start != null && end != null) {
-                    val localStartCal = Calendar.getInstance().apply {
-                        timeInMillis = start
-                        set(Calendar.HOUR_OF_DAY, 0)
-                        set(Calendar.MINUTE, 0)
-                        set(Calendar.SECOND, 0)
-                        set(Calendar.MILLISECOND, 0)
-                    }
-                    startDate = localStartCal.timeInMillis
-
-                    val localEndCal = Calendar.getInstance().apply {
-                        timeInMillis = end
-                        set(Calendar.HOUR_OF_DAY, 23)
-                        set(Calendar.MINUTE, 59)
-                        set(Calendar.SECOND, 59)
-                        set(Calendar.MILLISECOND, 999)
-                    }
-                    endDate = localEndCal.timeInMillis
-                }
-            }
-        )
     }
 }
 

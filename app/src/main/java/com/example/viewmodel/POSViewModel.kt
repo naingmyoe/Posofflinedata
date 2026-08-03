@@ -134,6 +134,9 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
     val activeVoucherId = MutableStateFlow<String?>(null)
     val activeCustomerName = MutableStateFlow("Not Register")
     val activePaymentMethod = MutableStateFlow("CASH")
+    val activeDiscount = MutableStateFlow(0.0)
+    val activeFee = MutableStateFlow(0.0)
+    val activeNote = MutableStateFlow("")
 
     val isPurchaseMode = MutableStateFlow(false)
     val isPurchaseHistoryMode = MutableStateFlow(false)
@@ -335,6 +338,10 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             combine(activeVoucherId, _cart, activeCustomerName, activePaymentMethod) { voucherId, cartList, customer, payment ->
                 if (voucherId != null && !isSavingCompletion) {
+                    val existingVoucher = repository.getVoucherDirect(voucherId)
+                    if (existingVoucher != null && existingVoucher.isCompleted) {
+                        return@combine
+                    }
                     if (cartList.isEmpty()) {
                         repository.deleteVoucher(voucherId)
                         repository.deleteVoucherItems(voucherId)
@@ -342,7 +349,6 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                         val totalAmount = cartList.sumOf { (if (isPurchaseMode.value) it.product.purchasePrice else it.product.sellingPrice) * it.quantity }
                         val totalItems = cartList.sumOf { it.quantity }
                         
-                        val existingVoucher = allVouchers.value.find { it.receiptNo == voucherId }
                         val timestamp = existingVoucher?.timestamp ?: System.currentTimeMillis()
                         
                         val voucher = Voucher(
@@ -1216,6 +1222,9 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         activeVoucherId.value = null
         activeCustomerName.value = "Not Register"
         activePaymentMethod.value = "CASH"
+        activeDiscount.value = 0.0
+        activeFee.value = 0.0
+        activeNote.value = ""
         _cart.value = emptyList()
     }
 
@@ -1228,6 +1237,9 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         activeVoucherId.value = receiptNo
         activeCustomerName.value = "Not Register"
         activePaymentMethod.value = "CASH"
+        activeDiscount.value = 0.0
+        activeFee.value = 0.0
+        activeNote.value = ""
         _cart.value = emptyList()
         isSavingCompletion = false
     }
@@ -1239,26 +1251,38 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
             activeVoucherId.value = voucher.receiptNo
             activeCustomerName.value = voucher.customerName
             activePaymentMethod.value = voucher.paymentMethod
+            activeDiscount.value = voucher.discount
+            activeFee.value = voucher.fee
+            activeNote.value = voucher.note
             
             // Get voucher items from direct
             val dbItems = repository.getVoucherItemsDirect(voucher.receiptNo)
-            val productsList = allProducts.value
+            val productsList = repository.allProducts.first()
             
             // Map to CartItems
             val cartItems = dbItems.mapNotNull { item ->
-                val prod = productsList.find { it.id == item.productId } ?: Product(
-                    id = item.productId,
-                    name = item.productName,
-                    groupName = "",
-                    purchasePrice = item.purchasePrice,
-                    sellingPrice = item.sellingPrice,
-                    unit = "",
-                    note = "",
-                    trackStock = false,
-                    barcode = "",
-                    quantity = 0,
-                    alertQuantity = 0
-                )
+                val baseProd = productsList.find { it.id == item.productId }
+                val prod = if (baseProd != null) {
+                    baseProd.copy(
+                        name = item.productName,
+                        purchasePrice = item.purchasePrice,
+                        sellingPrice = item.sellingPrice
+                    )
+                } else {
+                    Product(
+                        id = item.productId,
+                        name = item.productName,
+                        groupName = "",
+                        purchasePrice = item.purchasePrice,
+                        sellingPrice = item.sellingPrice,
+                        unit = "",
+                        note = "",
+                        trackStock = false,
+                        barcode = "",
+                        quantity = 0,
+                        alertQuantity = 0
+                    )
+                }
                 CartItem(product = prod, quantity = item.quantity)
             }
             _cart.value = cartItems
@@ -1273,7 +1297,9 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         paidAmount: Double = 0.0,
         changeAmount: Double = 0.0,
         balanceAmount: Double = 0.0,
-        note: String = "",
+        note: String = activeNote.value,
+        discount: Double = activeDiscount.value,
+        fee: Double = activeFee.value,
         onComplete: () -> Unit
     ) {
         val voucherId = activeVoucherId.value ?: return
@@ -1298,9 +1324,28 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                 paidAmount = paidAmount,
                 changeAmount = changeAmount,
                 balanceAmount = balanceAmount,
-                note = note
+                note = note,
+                discount = discount,
+                fee = fee
             )
             
+            // Revert stock of previous completed items if updating an existing voucher
+            val existingVoucher = repository.getVoucherDirect(voucherId)
+            if (existingVoucher != null && existingVoucher.isCompleted) {
+                val existingItems = repository.getVoucherItemsDirect(voucherId)
+                for (oldItem in existingItems) {
+                    val product = repository.getProductDirect(oldItem.productId)
+                    if (product != null && product.trackStock) {
+                        val restoredQty = if (existingVoucher.isPurchase) {
+                            (product.quantity - oldItem.quantity).coerceAtLeast(0)
+                        } else {
+                            product.quantity + oldItem.quantity
+                        }
+                        repository.updateStock(product.id, restoredQty)
+                    }
+                }
+            }
+
             repository.insertVoucher(voucher)
             repository.deleteVoucherItems(voucherId)
             

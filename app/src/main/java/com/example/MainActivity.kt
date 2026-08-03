@@ -207,6 +207,18 @@ class MainActivity : ComponentActivity() {
                     composable("expenses_list") {
                         com.example.ui.screens.ExpensesListScreen(navController = navController, viewModel = viewModel)
                     }
+                    composable("expense_category_detail/{categoryName}/{startDate}/{endDate}") { backStackEntry ->
+                        val categoryName = android.net.Uri.decode(backStackEntry.arguments?.getString("categoryName") ?: "")
+                        val startDate = backStackEntry.arguments?.getString("startDate")?.toLongOrNull() ?: 0L
+                        val endDate = backStackEntry.arguments?.getString("endDate")?.toLongOrNull() ?: 0L
+                        com.example.ui.screens.ExpenseCategoryDetailScreen(
+                            navController = navController,
+                            viewModel = viewModel,
+                            categoryName = categoryName,
+                            startDate = startDate,
+                            endDate = endDate
+                        )
+                    }
                 }
             }
         }

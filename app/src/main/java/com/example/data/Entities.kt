@@ -56,7 +56,9 @@ data class Voucher(
     val paidAmount: Double = 0.0,
     val changeAmount: Double = 0.0,
     val balanceAmount: Double = 0.0,
-    val note: String = ""
+    val note: String = "",
+    val discount: Double = 0.0,
+    val fee: Double = 0.0
 )
 
 @Entity(tableName = "voucher_items")

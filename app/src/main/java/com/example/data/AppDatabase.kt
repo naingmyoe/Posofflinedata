@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -19,7 +21,7 @@ import androidx.room.RoomDatabase
         ExpenseCategory::class,
         Expense::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -38,6 +40,13 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE vouchers ADD COLUMN discount REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE vouchers ADD COLUMN fee REAL NOT NULL DEFAULT 0.0")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -45,7 +54,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "unpatch_pos_db"
                 )
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_8_9)
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
                 INSTANCE = instance
                 instance
