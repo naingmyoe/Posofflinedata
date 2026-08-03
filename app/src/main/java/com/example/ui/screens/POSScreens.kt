@@ -15773,40 +15773,35 @@ fun drawReceiptBitmap(
         }
     }
     
+    val totalsFontSizeVal = bodyFontSizeVal * 1.20f
+    val totalsLineH = totalsFontSizeVal + 6f + lineSpacingVal
+    val gapAboveDivider = 10f + (lineSpacingVal * 0.2f)
+    val gapBelowDivider = totalsFontSizeVal + 12f + (lineSpacingVal * 0.2f)
+    val dividerTotalHeight = gapAboveDivider + gapBelowDivider
+
     val showTotalsSection = true
     if (showTotalsSection) {
         val showDetailedTotals = printDiscount || printFee
+        calculatedHeight += dividerTotalHeight // Divider after items
+        calculatedHeight += totalsLineH // ကျသင့်ငွေ
+        
+        if (discount > 0.0 && printDiscount) {
+            calculatedHeight += totalsLineH
+        }
+        if (fee > 0.0 && printFee) {
+            calculatedHeight += totalsLineH
+        }
+        
+        calculatedHeight += dividerTotalHeight // Divider after ကျသင့်ငွေ
+        
         if (showDetailedTotals) {
-            if (template == "template1") {
-                calculatedHeight += 25f // Divider after items
-                calculatedHeight += normalLineHeight // ကျသင့်ငွေ
-                calculatedHeight += 25f // Divider
-                calculatedHeight += normalLineHeight // စုစုပေါင်း
-                calculatedHeight += normalLineHeight // ပေးငွေ
-                calculatedHeight += 25f // Divider
-                calculatedHeight += normalLineHeight // အမ်းငွေ
-                calculatedHeight += 25f // Divider
-            } else {
-                calculatedHeight += 25f // Divider after items
-                calculatedHeight += normalLineHeight // ကျသင့်ငွေ
-                calculatedHeight += 25f // NEW divider after ကျသင့်ငွေ (as requested)
-                calculatedHeight += normalLineHeight // စုစုပေါင်း
-                calculatedHeight += normalLineHeight // ပေးငွေ
-                calculatedHeight += 25f // NEW divider after ပေးငွေ (as requested)
-                calculatedHeight += normalLineHeight // အမ်းငွေ
-                calculatedHeight += 25f // Divider
-            }
+            calculatedHeight += totalsLineH // စုစုပေါင်း
+            calculatedHeight += totalsLineH // ပေးငွေ
             
-            if (discount > 0.0 && printDiscount) {
-                calculatedHeight += normalLineHeight
-            }
-            if (fee > 0.0 && printFee) {
-                calculatedHeight += normalLineHeight
-            }
-        } else {
-            calculatedHeight += 25f // Divider after items
-            calculatedHeight += normalLineHeight // ကျသင့်ငွေ
-            calculatedHeight += 25f // Divider after ကျသင့်ငွေ
+            calculatedHeight += dividerTotalHeight // Divider after ပေးငွေ
+            calculatedHeight += totalsLineH // အမ်းငွေ
+            
+            calculatedHeight += dividerTotalHeight // Divider after အမ်းငွေ
         }
     }
     
@@ -15882,6 +15877,21 @@ fun drawReceiptBitmap(
         color = AndroidColor.BLACK
         textSize = bodyFontSizeVal
         typeface = if (isMode1) Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD) else Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+        isAntiAlias = true
+        textAlign = Paint.Align.RIGHT
+    }
+
+    val totalsTextPaint = Paint().apply {
+        color = AndroidColor.BLACK
+        textSize = totalsFontSizeVal
+        typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
+        isAntiAlias = true
+    }
+
+    val totalsRightTextPaint = Paint().apply {
+        color = AndroidColor.BLACK
+        textSize = totalsFontSizeVal
+        typeface = Typeface.create(Typeface.DEFAULT_BOLD, Typeface.BOLD)
         isAntiAlias = true
         textAlign = Paint.Align.RIGHT
     }
@@ -16046,90 +16056,53 @@ fun drawReceiptBitmap(
     
     if (showTotalsSection) {
         val showDetailedTotals = printDiscount || printFee
-        if (template == "template1") {
+
+        fun drawPaddedDivider() {
+            currentY += gapAboveDivider
             drawDivider(currentY)
-            currentY += 25f
-            
-            canvas.drawText("$labelSubTotal:", padding.toFloat(), currentY, textPaint)
-            val computedSub = subTotalVal
-            canvas.drawText("${numberFormat.format(computedSub)}", (width - padding).toFloat(), currentY, rightTextPaint)
-            currentY += normalLineHeight.toFloat()
-            
-            if (discount > 0.0 && printDiscount) {
-                canvas.drawText("Discount:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("-${numberFormat.format(discount)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-            }
-            if (fee > 0.0 && printFee) {
-                canvas.drawText("Fee:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("+${numberFormat.format(fee)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-            }
-            
-            drawDivider(currentY)
-            currentY += 25f
-            
-            if (showDetailedTotals) {
-                canvas.drawText("$labelTotal:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("${numberFormat.format(total)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-                
-                canvas.drawText("$labelPaid:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("${numberFormat.format(paid)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-                
-                drawDivider(currentY)
-                currentY += 25f
-                
-                canvas.drawText("$labelDue:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("${numberFormat.format(change)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-                
-                drawDivider(currentY)
-                currentY += 25f
-            }
-        } else {
-            drawDivider(currentY)
-            currentY += 25f
-            
-            canvas.drawText("$labelSubTotal:", padding.toFloat(), currentY, textPaint)
-            val computedSub = subTotalVal
-            canvas.drawText("${numberFormat.format(computedSub)}", (width - padding).toFloat(), currentY, rightTextPaint)
-            currentY += normalLineHeight.toFloat()
-            
-            if (discount > 0.0 && printDiscount) {
-                canvas.drawText("Discount:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("-${numberFormat.format(discount)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-            }
-            if (fee > 0.0 && printFee) {
-                canvas.drawText("Fee:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("+${numberFormat.format(fee)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-            }
-            
-            drawDivider(currentY)
-            currentY += 25f
-            
-            if (showDetailedTotals) {
-                canvas.drawText("$labelTotal:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("${numberFormat.format(total)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-                
-                canvas.drawText("$labelPaid:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("${numberFormat.format(paid)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-                
-                drawDivider(currentY)
-                currentY += 25f
-                
-                canvas.drawText("$labelDue:", padding.toFloat(), currentY, textPaint)
-                canvas.drawText("${numberFormat.format(change)}", (width - padding).toFloat(), currentY, rightTextPaint)
-                currentY += normalLineHeight.toFloat()
-                
-                drawDivider(currentY)
-                currentY += 25f
-            }
+            currentY += gapBelowDivider
+        }
+
+        drawPaddedDivider()
+
+        // ကျသင့်ငွေ (SubTotal)
+        canvas.drawText("$labelSubTotal:", padding.toFloat(), currentY, totalsTextPaint)
+        val computedSub = subTotalVal
+        canvas.drawText("${numberFormat.format(computedSub)}", (width - padding).toFloat(), currentY, totalsRightTextPaint)
+        currentY += totalsLineH
+
+        if (discount > 0.0 && printDiscount) {
+            canvas.drawText("Discount:", padding.toFloat(), currentY, totalsTextPaint)
+            canvas.drawText("-${numberFormat.format(discount)}", (width - padding).toFloat(), currentY, totalsRightTextPaint)
+            currentY += totalsLineH
+        }
+        if (fee > 0.0 && printFee) {
+            canvas.drawText("Fee:", padding.toFloat(), currentY, totalsTextPaint)
+            canvas.drawText("+${numberFormat.format(fee)}", (width - padding).toFloat(), currentY, totalsRightTextPaint)
+            currentY += totalsLineH
+        }
+
+        drawPaddedDivider()
+
+        if (showDetailedTotals) {
+            // စုစုပေါင်း (Total)
+            canvas.drawText("$labelTotal:", padding.toFloat(), currentY, totalsTextPaint)
+            canvas.drawText("${numberFormat.format(total)}", (width - padding).toFloat(), currentY, totalsRightTextPaint)
+            currentY += totalsLineH
+
+            // ပေးငွေ (Paid)
+            canvas.drawText("$labelPaid:", padding.toFloat(), currentY, totalsTextPaint)
+            canvas.drawText("${numberFormat.format(paid)}", (width - padding).toFloat(), currentY, totalsRightTextPaint)
+            currentY += totalsLineH
+
+            drawPaddedDivider()
+
+            // အမ်းငွေ (Change/Due)
+            canvas.drawText("$labelDue:", padding.toFloat(), currentY, totalsTextPaint)
+            canvas.drawText("${numberFormat.format(change)}", (width - padding).toFloat(), currentY, totalsRightTextPaint)
+            currentY += totalsLineH
+
+            drawPaddedDivider()
         }
     }
     
