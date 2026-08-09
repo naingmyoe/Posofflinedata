@@ -1424,12 +1424,23 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun updateProductStockAndAlert(productId: Long, newQuantity: Int, newAlertQuantity: Int) {
+        viewModelScope.launch {
+            repository.updateStockAndAlert(productId, newQuantity, newAlertQuantity)
+        }
+    }
+
     fun updateCartItemPrice(productId: Long, newPrice: Double) {
         val current = _cart.value.toMutableList()
         val index = current.indexOfFirst { it.product.id == productId }
         if (index != -1) {
             val oldItem = current[index]
-            current[index] = oldItem.copy(product = oldItem.product.copy(sellingPrice = newPrice))
+            val updatedProduct = if (isPurchaseMode.value) {
+                oldItem.product.copy(purchasePrice = newPrice)
+            } else {
+                oldItem.product.copy(sellingPrice = newPrice)
+            }
+            current[index] = oldItem.copy(product = updatedProduct)
             _cart.value = current
         }
     }
@@ -1450,7 +1461,12 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         val current = _cart.value.toMutableList()
         if (index >= 0 && index < current.size) {
             val oldItem = current[index]
-            current[index] = oldItem.copy(product = oldItem.product.copy(sellingPrice = newPrice))
+            val updatedProduct = if (isPurchaseMode.value) {
+                oldItem.product.copy(purchasePrice = newPrice)
+            } else {
+                oldItem.product.copy(sellingPrice = newPrice)
+            }
+            current[index] = oldItem.copy(product = updatedProduct)
             _cart.value = current
         }
     }
@@ -1469,6 +1485,15 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
         if (index >= 0 && index < current.size) {
             val oldItem = current[index]
             current[index] = oldItem.copy(product = oldItem.product.copy(purchasePrice = newPurchasePrice))
+            _cart.value = current
+        }
+    }
+
+    fun updateCartItemSellingPriceByIndex(index: Int, newSellingPrice: Double) {
+        val current = _cart.value.toMutableList()
+        if (index >= 0 && index < current.size) {
+            val oldItem = current[index]
+            current[index] = oldItem.copy(product = oldItem.product.copy(sellingPrice = newSellingPrice))
             _cart.value = current
         }
     }

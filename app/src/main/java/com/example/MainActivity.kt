@@ -39,10 +39,10 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = navController,
                         startDestination = "splash",
-                        enterTransition = { fadeIn(animationSpec = tween(280)) + slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) },
-                        exitTransition = { fadeOut(animationSpec = tween(220)) + slideOutHorizontally(targetOffsetX = { -it / 4 }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) },
-                        popEnterTransition = { fadeIn(animationSpec = tween(220)) + slideInHorizontally(initialOffsetX = { -it / 4 }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) },
-                        popExitTransition = { fadeOut(animationSpec = tween(280)) + slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+                        enterTransition = { fadeIn(animationSpec = tween(150)) },
+                        exitTransition = { fadeOut(animationSpec = tween(150)) },
+                        popEnterTransition = { fadeIn(animationSpec = tween(150)) },
+                        popExitTransition = { fadeOut(animationSpec = tween(150)) }
                     ) {
                     composable("splash") {
                         SplashScreen(navController = navController, viewModel = viewModel)

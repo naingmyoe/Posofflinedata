@@ -43,6 +43,10 @@ class Repository(private val db: AppDatabase) {
         db.productDao().updateStock(productId, quantity)
     }
 
+    suspend fun updateStockAndAlert(productId: Long, quantity: Int, alertQuantity: Int) {
+        db.productDao().updateStockAndAlert(productId, quantity, alertQuantity)
+    }
+
     suspend fun getProductDirect(id: Long): Product? {
         return db.productDao().getProductById(id)
     }
