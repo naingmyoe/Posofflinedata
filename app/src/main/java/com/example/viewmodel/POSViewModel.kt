@@ -1337,7 +1337,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                     val product = repository.getProductDirect(oldItem.productId)
                     if (product != null && product.trackStock) {
                         val restoredQty = if (existingVoucher.isPurchase) {
-                            (product.quantity - oldItem.quantity).coerceAtLeast(0)
+                            product.quantity - oldItem.quantity
                         } else {
                             product.quantity + oldItem.quantity
                         }
@@ -1399,7 +1399,7 @@ class POSViewModel(application: Application) : AndroidViewModel(application) {
                     val product = repository.getProductDirect(item.productId)
                     if (product != null && product.trackStock) {
                         val newQty = if (voucher.isPurchase) {
-                            (product.quantity - item.quantity).coerceAtLeast(0)
+                            product.quantity - item.quantity
                         } else {
                             product.quantity + item.quantity
                         }
