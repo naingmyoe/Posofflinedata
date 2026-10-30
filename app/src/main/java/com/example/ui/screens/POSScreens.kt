@@ -16384,6 +16384,8 @@ fun shareReceiptImage(context: Context, bitmap: Bitmap) {
     }
 }
 
+val printerMutex = kotlinx.coroutines.sync.Mutex()
+
 fun convertBitmapToEscPos(bitmap: Bitmap): ByteArray {
     val width = bitmap.width
     val height = bitmap.height
@@ -16391,41 +16393,61 @@ fun convertBitmapToEscPos(bitmap: Bitmap): ByteArray {
     
     val output = java.io.ByteArrayOutputStream()
     
-    // Header for GS v 0 command
-    output.write(0x1D)
-    output.write(0x76)
-    output.write(0x30)
-    output.write(0) // mode = 0 (normal)
+    // 1. Hardware Reset / Initialize printer (ESC @)
+    output.write(0x1B)
+    output.write(0x40)
     
-    output.write(widthBytes % 256)
-    output.write(widthBytes / 256)
-    output.write(height % 256)
-    output.write(height / 256)
-    
-    // Pixel conversion with thresholding
-    for (y in 0 until height) {
-        for (xb in 0 until widthBytes) {
-            var byteVal = 0
-            for (bit in 0 until 8) {
-                val x = xb * 8 + bit
-                if (x < width) {
-                    val pixel = bitmap.getPixel(x, y)
-                    // Calculate luminance (0.299R + 0.587G + 0.114B)
-                    val r = (pixel shr 16) and 0xFF
-                    val g = (pixel shr 8) and 0xFF
-                    val b = pixel and 0xFF
-                    val luminance = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-                    // If pixel is dark (luminance < 180), print it
-                    if (luminance < 180) {
-                        byteVal = byteVal or (1 shl (7 - bit))
+    // 2. Set line spacing to 0 for seamless continuous raster slice printing (ESC 3 0)
+    output.write(0x1B)
+    output.write(0x33)
+    output.write(0)
+
+    // Slice raster image into safe bands (32 lines per slice = 1536 bytes for 58mm) to fit well inside 2KB/4KB printer buffers
+    val maxChunkHeight = 32
+    var y = 0
+    while (y < height) {
+        val currentChunkHeight = minOf(maxChunkHeight, height - y)
+        
+        // Header for GS v 0 command for this band
+        output.write(0x1D)
+        output.write(0x76)
+        output.write(0x30)
+        output.write(0) // mode = 0 (normal)
+        
+        output.write(widthBytes % 256)
+        output.write(widthBytes / 256)
+        output.write(currentChunkHeight % 256)
+        output.write(currentChunkHeight / 256)
+        
+        // Pixel conversion with thresholding
+        for (row in 0 until currentChunkHeight) {
+            val actualY = y + row
+            for (xb in 0 until widthBytes) {
+                var byteVal = 0
+                for (bit in 0 until 8) {
+                    val x = xb * 8 + bit
+                    if (x < width) {
+                        val pixel = bitmap.getPixel(x, actualY)
+                        val r = (pixel shr 16) and 0xFF
+                        val g = (pixel shr 8) and 0xFF
+                        val b = pixel and 0xFF
+                        val luminance = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                        if (luminance < 180) {
+                            byteVal = byteVal or (1 shl (7 - bit))
+                        }
                     }
                 }
+                output.write(byteVal)
             }
-            output.write(byteVal)
         }
+        y += currentChunkHeight
     }
     
-    // Feed lines command
+    // 3. Restore default line spacing (ESC 2)
+    output.write(0x1B)
+    output.write(0x32)
+    
+    // 4. Feed lines command (ESC d 4)
     output.write(0x1B)
     output.write(0x64)
     output.write(4)
@@ -16441,6 +16463,13 @@ fun printBitmapToBluetoothPrinter(context: Context, macAddress: String, bitmap: 
     
     // Run in background thread using Coroutines
     kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        if (!printerMutex.tryLock()) {
+            launch(kotlinx.coroutines.Dispatchers.Main) {
+                android.widget.Toast.makeText(context, "Printer is busy, please wait...", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            return@launch
+        }
+        
         var socket: android.bluetooth.BluetoothSocket? = null
         try {
             val bluetoothAdapter: BluetoothAdapter? = BluetoothAdapter.getDefaultAdapter()
@@ -16474,16 +16503,89 @@ fun printBitmapToBluetoothPrinter(context: Context, macAddress: String, bitmap: 
             socket = device.createRfcommSocketToServiceRecord(uuid)
             socket.connect()
             
+            // Allow RFCOMM connection to stabilize before pushing data to UART
+            Thread.sleep(300)
+            
             launch(kotlinx.coroutines.Dispatchers.Main) {
                 android.widget.Toast.makeText(context, "Connected. Sending print data...", android.widget.Toast.LENGTH_SHORT).show()
             }
             
             val outputStream = socket.outputStream
-            val escPosBytes = convertBitmapToEscPos(bitmap)
-            outputStream.write(escPosBytes)
+            
+            // 1. Hardware Reset / Initialize printer (ESC @) to clear any previous state
+            outputStream.write(byteArrayOf(0x1B, 0x40))
+            outputStream.flush()
+            // Allow printer MCU time to perform internal reset before sending print commands
+            Thread.sleep(150)
+            
+            // 2. Set line spacing to 0 for seamless continuous raster slice printing (ESC 3 0)
+            outputStream.write(byteArrayOf(0x1B, 0x33, 0x00))
+            outputStream.flush()
+            Thread.sleep(30)
+            
+            // 3. Stream raster bitmap in small 32-line slices directly to prevent buffer overrun
+            val width = bitmap.width
+            val height = bitmap.height
+            val widthBytes = (width + 7) / 8
+            val chunkHeight = 32
+            
+            var y = 0
+            while (y < height) {
+                val currentChunkHeight = minOf(chunkHeight, height - y)
+                val chunkBuffer = java.io.ByteArrayOutputStream(8 + widthBytes * currentChunkHeight)
+                
+                // Header for GS v 0 command for this band
+                chunkBuffer.write(0x1D)
+                chunkBuffer.write(0x76)
+                chunkBuffer.write(0x30)
+                chunkBuffer.write(0) // mode = 0 (normal)
+                
+                chunkBuffer.write(widthBytes % 256)
+                chunkBuffer.write(widthBytes / 256)
+                chunkBuffer.write(currentChunkHeight % 256)
+                chunkBuffer.write(currentChunkHeight / 256)
+                
+                // Pixel conversion with thresholding
+                for (row in 0 until currentChunkHeight) {
+                    val actualY = y + row
+                    for (xb in 0 until widthBytes) {
+                        var byteVal = 0
+                        for (bit in 0 until 8) {
+                            val x = xb * 8 + bit
+                            if (x < width) {
+                                val pixel = bitmap.getPixel(x, actualY)
+                                val r = (pixel shr 16) and 0xFF
+                                val g = (pixel shr 8) and 0xFF
+                                val b = pixel and 0xFF
+                                val luminance = (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+                                if (luminance < 180) {
+                                    byteVal = byteVal or (1 shl (7 - bit))
+                                }
+                            }
+                        }
+                        chunkBuffer.write(byteVal)
+                    }
+                }
+                
+                val chunkBytes = chunkBuffer.toByteArray()
+                outputStream.write(chunkBytes)
+                outputStream.flush()
+                
+                // Pacing: give thermal head time to burn 32 lines and keep printer buffer clear
+                Thread.sleep(45)
+                
+                y += currentChunkHeight
+            }
+            
+            // 4. Restore default line spacing (ESC 2)
+            outputStream.write(byteArrayOf(0x1B, 0x32))
+            
+            // 5. Feed lines command (ESC d 4) so receipt extends past tear-off bar
+            outputStream.write(byteArrayOf(0x1B, 0x64, 0x04))
             outputStream.flush()
             
-            Thread.sleep(1200) // wait for buffer to write completely
+            // 6. Give physical paper feed time to complete before closing socket
+            Thread.sleep(1200)
             
             launch(kotlinx.coroutines.Dispatchers.Main) {
                 android.widget.Toast.makeText(context, "Receipt Printed Successfully!", android.widget.Toast.LENGTH_SHORT).show()
@@ -16500,6 +16602,7 @@ fun printBitmapToBluetoothPrinter(context: Context, macAddress: String, bitmap: 
             } catch (ex: Exception) {
                 ex.printStackTrace()
             }
+            printerMutex.unlock()
         }
     }
 }
@@ -16746,10 +16849,13 @@ fun SettingsLineSpacingScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReceiptDetailScreen(navController: NavController, viewModel: POSViewModel, receiptNo: String, highlightProduct: String = "") {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val vouchers by viewModel.allVouchers.collectAsState()
     val voucher = vouchers.find { it.receiptNo == receiptNo }
     val items by viewModel.getVoucherItemsFlow(receiptNo).collectAsState(initial = emptyList())
     val selectedCurrency by viewModel.selectedCurrency.collectAsState()
+    val products by viewModel.allProducts.collectAsState()
+    val customers by viewModel.allCustomers.collectAsState()
 
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -16764,6 +16870,64 @@ fun ReceiptDetailScreen(navController: NavController, viewModel: POSViewModel, r
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            if (voucher != null) {
+                                val cartItems = items.map { item ->
+                                    val matchedProd = products.find { it.id == item.productId || it.name.equals(item.productName, ignoreCase = true) }
+                                    com.example.viewmodel.CartItem(
+                                        product = matchedProd ?: com.example.data.Product(
+                                            id = item.productId,
+                                            name = item.productName,
+                                            groupName = "",
+                                            purchasePrice = item.purchasePrice,
+                                            sellingPrice = item.sellingPrice,
+                                            unit = "",
+                                            note = "",
+                                            trackStock = false,
+                                            barcode = "",
+                                            quantity = 0,
+                                            alertQuantity = 0
+                                        ),
+                                        quantity = item.quantity
+                                    )
+                                }
+                                val matchedCustomer = customers.find { it.name.equals(voucher.customerName, ignoreCase = true) }
+                                val custPhone = matchedCustomer?.phone ?: ""
+                                val custAddress = matchedCustomer?.address ?: ""
+                                val bitmap = drawReceiptBitmap(
+                                    context = context,
+                                    storeName = "yyy",
+                                    phone = "092534",
+                                    receiptNo = voucher.receiptNo,
+                                    items = cartItems,
+                                    total = voucher.totalAmount,
+                                    paid = if (voucher.paidAmount > 0.0) voucher.paidAmount else voucher.totalAmount,
+                                    change = voucher.changeAmount,
+                                    timestamp = voucher.timestamp,
+                                    paperWidth = viewModel.selectedPaperWidth.value,
+                                    printMode = viewModel.selectedPrintMode.value,
+                                    template = viewModel.selectedTemplate.value,
+                                    currency = selectedCurrency,
+                                    customerName = voucher.customerName,
+                                    customerPhone = custPhone,
+                                    customerAddress = custAddress,
+                                    discount = voucher.discount,
+                                    fee = voucher.fee,
+                                    isPurchase = voucher.isPurchase
+                                )
+                                val macAddress = viewModel.selectedPrinterMac.value
+                                if (macAddress.isNotEmpty()) {
+                                    printBitmapToBluetoothPrinter(context, macAddress, bitmap)
+                                } else {
+                                    android.widget.Toast.makeText(context, "Bluetooth Printer not configured in Settings. Sharing...", android.widget.Toast.LENGTH_LONG).show()
+                                    shareReceiptImage(context, bitmap)
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Filled.Print, contentDescription = "Print", tint = Color.DarkGray)
+                    }
                     IconButton(onClick = { showEditDialog = true }) {
                         Icon(imageVector = Icons.Filled.Edit, contentDescription = "Edit", tint = Color.DarkGray)
                     }
